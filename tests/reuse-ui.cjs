@@ -31,20 +31,20 @@ await page.getByRole('button',{name:'SOP library',exact:true}).click();
 const library=page.getByRole('dialog',{name:'SOP library',exact:true});
 await library.getByRole('button',{name:'Edit SOP YouTube long form SOP',exact:true}).click();
 let editor=page.getByRole('dialog',{name:'Edit SOP',exact:true});
-assert.equal(await editor.getByRole('button',{name:'Move up Pre production',exact:true}).isDisabled(),true);
-await editor.getByRole('button',{name:'Move up Production',exact:true}).click();
+await editor.getByRole('button',{name:'Actions for SOP step Pre production',exact:true}).click();assert.equal(await editor.getByRole('menuitem',{name:'Move up Pre production',exact:true}).isDisabled(),true);await page.keyboard.press('Escape');
+await editor.getByRole('button',{name:'Actions for SOP step Production',exact:true}).click();await editor.getByRole('menuitem',{name:'Move up Production',exact:true}).click();
 assert.equal(await editor.getByRole('button',{name:'Drag SOP subtask Production',exact:true}).evaluate(n=>n===document.activeElement),true);
 let order=await editor.getByLabel('Subtask title',{exact:true}).evaluateAll(nodes=>nodes.map(n=>n.value));
 assert.deepEqual(order.slice(0,4),['Production','Shoot','Edit','Thumbnail']);
 await editor.getByRole('button',{name:'Drag SOP subtask Publish',exact:true}).dragTo(editor.locator('.sop-step-row').filter({has:page.getByRole('button',{name:'Drag SOP subtask Production',exact:true})}),{targetPosition:{x:90,y:3}});
 order=await editor.getByLabel('Subtask title',{exact:true}).evaluateAll(nodes=>nodes.map(n=>n.value));assert.equal(order[0],'Publish');
-await editor.getByRole('button',{name:'Move up Edit',exact:true}).click();
+await editor.getByRole('button',{name:'Drag SOP subtask Edit',exact:true}).focus();await page.keyboard.press('ArrowUp');
 const keywordHandle=editor.getByRole('button',{name:'Drag SOP subtask Keywords',exact:true});
 const productionId=await editor.locator('.sop-step-row').filter({has:page.getByRole('button',{name:'Drag SOP subtask Production',exact:true})}).getAttribute('data-sop-row');
 // The target is revealed only during dragging. Use real mouse input to reach it.
 await keywordHandle.scrollIntoViewIfNeeded();const from=await keywordHandle.boundingBox();await page.mouse.move(from.x+from.width/2,from.y+from.height/2);await page.mouse.down();await page.mouse.move(from.x+from.width/2+12,from.y+from.height/2,{steps:5});
-const inside=editor.locator('[data-sop-inside="'+productionId+'"]');await inside.waitFor({state:'visible'});await inside.scrollIntoViewIfNeeded();const into=await inside.boundingBox();await page.mouse.move(into.x+into.width/2,into.y+into.height/2,{steps:12});await page.mouse.move(into.x+into.width/2,into.y+into.height/2+1);await page.mouse.up();
-await editor.getByLabel('More move options for Keywords',{exact:true}).click();await editor.getByRole('button',{name:'Move out one level: Keywords',exact:true}).click();
+const target=editor.locator('[data-sop-row="'+productionId+'"]');await target.scrollIntoViewIfNeeded();const into=await target.boundingBox();await page.mouse.move(into.x+120,into.y+into.height/2,{steps:12});await page.mouse.move(into.x+121,into.y+into.height/2);await page.mouse.up();
+await editor.getByRole('button',{name:'Actions for SOP step Keywords',exact:true}).click();await editor.getByRole('menuitem',{name:'Move out one level: Keywords',exact:true}).click();
 await editor.getByRole('button',{name:'Save SOP',exact:true}).click();await library.waitFor();
 let saved=(await state(page)).sopRules.find(r=>r.id==='builtin-youtube-long-form');
 assert.deepEqual(saved.nodes.map(n=>n.title),['Publish','Production','Keywords','Pre production']);
@@ -52,10 +52,32 @@ assert.deepEqual(saved.nodes[1].children.map(n=>n.title),['Edit','Shoot','Thumbn
 assert.deepEqual(saved.nodes[3].children.map(n=>n.title),['Script']);
 await library.getByRole('button',{name:'Edit SOP YouTube long form SOP',exact:true}).click();editor=page.getByRole('dialog',{name:'Edit SOP',exact:true});
 assert.equal((await editor.getByLabel('Subtask title',{exact:true}).evaluateAll(nodes=>nodes.map(n=>n.value)))[0],'Publish');
-await page.setViewportSize({width:390,height:844});await editor.getByRole('button',{name:'Move down Keywords',exact:true}).click();
+// Compact rows keep title and both visible controls on one line, including long names.
+await editor.getByRole('button',{name:'Collapse group Production',exact:true}).click();assert.equal(await editor.getByRole('button',{name:'Drag SOP subtask Shoot',exact:true}).count(),0);await editor.getByRole('button',{name:'Expand group Production',exact:true}).click();
+for(const width of [1280,700,390,320]){
+  await page.setViewportSize({width,height:1000});
+  const layout=await editor.locator('.sop-step-row').evaluateAll(rows=>rows.map(row=>{
+    const r=row.getBoundingClientRect(),input=row.querySelector('input').getBoundingClientRect(),handle=row.querySelector('.sop-drag-handle').getBoundingClientRect(),actions=row.querySelector('.sop-actions-trigger').getBoundingClientRect();
+    return {height:r.height,width:input.width,aligned:Math.abs(input.y-handle.y)<5&&Math.abs(input.y-actions.y)<5,inBounds:actions.right<=r.right+1};
+  }));
+  assert.ok(layout.every(r=>r.height<=46&&r.width>=90&&r.aligned&&r.inBounds),JSON.stringify({width,layout}));
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+}
+await page.setViewportSize({width:1280,height:1000});await editor.locator('.sop-checklist-heading').scrollIntoViewIfNeeded();
+fs.mkdirSync(path.join(root,'output/playwright'),{recursive:true});await page.screenshot({path:path.join(root,'output/playwright/sop-checklist-desktop.png'),animations:'disabled'});
+await page.setViewportSize({width:390,height:844});await editor.getByRole('button',{name:'Actions for SOP step Keywords',exact:true}).click();
+const menuBounds=await editor.getByRole('menu',{name:'Actions for Keywords',exact:true}).boundingBox();assert.ok(menuBounds.x>=0&&menuBounds.y>=0&&menuBounds.x+menuBounds.width<=390&&menuBounds.y+menuBounds.height<=844);
+await page.screenshot({path:path.join(root,'output/playwright/sop-checklist-menu-mobile.png'),animations:'disabled'});
+await editor.getByRole('menuitem',{name:'Move down Keywords',exact:true}).click();
+await editor.getByRole('button',{name:'Actions for SOP step Keywords',exact:true}).click();await page.keyboard.press('Escape');assert.equal(await editor.isVisible(),true);assert.equal(await editor.getByRole('button',{name:'Actions for SOP step Keywords',exact:true}).getAttribute('aria-expanded'),'false');
+await editor.getByRole('button',{name:'Actions for SOP step Keywords',exact:true}).click();await editor.getByRole('menuitem',{name:'Add nested subtask under Keywords',exact:true}).click();
+await page.waitForFunction(()=>Array.from(document.querySelectorAll('.sop-step-row input')).some(n=>n.value===''));
+await editor.locator('.sop-step-row input').evaluateAll(nodes=>nodes.find(n=>n.value==='').getAttribute('data-sop-node')).then(async id=>{await editor.locator('[data-sop-node="'+id+'"]').fill('Outline draft')});
+await editor.getByRole('button',{name:'Actions for SOP step untitled step',exact:true}).click();await editor.getByRole('menuitem',{name:'Remove SOP subtask untitled step',exact:true}).click();assert.equal(await editor.locator('.sop-step-row input').evaluateAll(nodes=>nodes.some(n=>n.value==='Outline draft')),false);
+
 assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
 fs.mkdirSync(path.join(root,'output/playwright'),{recursive:true});await page.screenshot({path:path.join(root,'output/playwright/sop-reorder-mobile.png'),animations:'disabled'});
-await editor.getByRole('button',{name:'Use suggested checklist for this format',exact:true}).click();await editor.getByRole('button',{name:'Save SOP',exact:true}).click();await library.waitFor();await library.getByRole('button',{name:'Done',exact:true}).click();await page.setViewportSize({width:1280,height:1000});
+await editor.locator('summary').filter({hasText:'Start from a checklist'}).click();await editor.getByRole('button',{name:'Use suggested checklist for this format',exact:true}).click();await editor.getByRole('button',{name:'Save SOP',exact:true}).click();await library.waitFor();await library.getByRole('button',{name:'Done',exact:true}).click();await page.setViewportSize({width:1280,height:1000});
 }
 // Regression: independent project, activity and nested subtask copies.
 await page.getByRole('button',{name:'Duplicate Live campaign',exact:true}).click();let dialog=page.getByRole('dialog',{name:'Duplicate campaign',exact:true});
@@ -71,7 +93,7 @@ await dialog.getByRole('button',{name:'Edit SOP Launch checklist (duplicate 1)',
 assert.equal(await dialog.getByText('Duplicate name from the old library. Rename this SOP to make it unique.',{exact:true}).count(),2);
 await dialog.getByRole('button',{name:'New SOP',exact:true}).click();let child=page.getByRole('dialog',{name:'New SOP',exact:true});
 await child.getByLabel('SOP name *',{exact:true}).fill(' launch  CHECKLIST ');await child.getByLabel('Platform *',{exact:true}).selectOption('YouTube');await child.getByLabel('Content format *',{exact:true}).selectOption('Long form');await child.getByLabel('Topic / category',{exact:true}).selectOption('Academic');
-await child.getByRole('button',{name:'+ Add subtask',exact:true}).click();await child.getByLabel('Subtask title',{exact:true}).last().fill('Draft script');await child.getByRole('button',{name:'+ Add subtask',exact:true}).click();await child.getByLabel('Subtask title',{exact:true}).last().fill('Publish video');
+await child.getByRole('button',{name:'+ Add step',exact:true}).click();await child.getByLabel('Subtask title',{exact:true}).last().fill('Draft script');await child.getByRole('button',{name:'+ Add step',exact:true}).click();await child.getByLabel('Subtask title',{exact:true}).last().fill('Publish video');
 assert.equal(await child.getByRole('button',{name:'Save SOP',exact:true}).isDisabled(),true);await child.getByText('An SOP with this name already exists. Choose a unique name.',{exact:true}).waitFor();
 await child.getByLabel('SOP name *',{exact:true}).fill('YouTube academic publishing');await child.getByRole('button',{name:'Save SOP',exact:true}).click();await dialog.waitFor();
 s=await state(page);const rule=s.sopRules.find(r=>r.name==='YouTube academic publishing');assert.equal(rule.nodes.length,2);assert.equal(rule.angle,'Academic');assert.equal(await page.evaluate(()=>fixture.claims.filter(c=>c.sopId===fixture.S.sopRules.find(r=>r.name==="YouTube academic publishing").id).length),1);

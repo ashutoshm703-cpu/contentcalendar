@@ -1100,64 +1100,102 @@ function moveSopNode(nodes,id,targetId,placement){
   }return insert(remaining);
 }
 function openSopRule(rule,onSaved){
-  var ui=actionDialog(rule?"Edit SOP":"New SOP","Give this SOP a unique name, set its matching conditions, and build the checklist here.");
+  var ui=actionDialog(rule?"Edit SOP":"New SOP","Set when this SOP is suggested, then arrange the steps your team follows.");ui.node.classList.add("sop-editor");
   var d={name:rule?rule.name:"",platform:rule?rule.platform:"",format:rule?rule.format:"",angle:rule?(rule.angle||""):"",nodes:rule?copyNodes(sopNodes(rule)):[],anchorDate:rule?(rule.anchorDate||""):""};
   var initial=JSON.stringify(d),name=input("text",d.name,"e.g. YouTube academic video"),platform=dropdown(PLATFORMS.map(function(p){return[p[0],p[0]]}),d.platform,"Choose platform"),format=formatSelect(d.format,"Choose content format"),topicWrap=el("div"),builder=el("div","sop-builder"),hint=el("p","hint err");name.maxLength=100;
-  ui.body.appendChild(field("SOP name *",name));ui.body.appendChild(field("Platform *",platform));ui.body.appendChild(field("Content format *",format));ui.body.appendChild(topicWrap);
+  ui.body.appendChild(field("SOP name *",name));var conditionsGrid=el("div","sop-condition-grid");conditionsGrid.appendChild(field("Platform *",platform));conditionsGrid.appendChild(field("Content format *",format));ui.body.appendChild(conditionsGrid);ui.body.appendChild(topicWrap);
   function drawTopic(){clear(topicWrap);var topic=sopTopicSelect(d.format,d.angle);topic.onchange=function(){d.angle=topic.value};topicWrap.appendChild(field("Topic / category",topic,"Any topic matches every topic within the selected format."))}
   var source=dropdown([["","Build or edit the checklist below"]].concat(S.activities.filter(function(a){return (a.subtasks||[]).length}).map(function(a){var c=campById(a.campaignId);return[a.id,a.title+" · "+fmtShort(a.dueDate)+(c?" · "+c.name:"")]})),"",null);
   source.onchange=function(){var a=S.activities.find(function(x){return x.id===source.value});if(!a)return;d.nodes=copyNodes(a.subtasks);d.anchorDate=a.dueDate;d.platform=(a.platforms||[])[0]||d.platform;d.format=a.type||d.format;d.angle=a.angle||"";platform.value=d.platform;format.value=d.format;drawTopic();drawBuilder();validate()};
-  ui.body.appendChild(field("Start from an activity checklist (optional)",source,"Copies the checklist into this SOP. You can edit it below."));
-  var suggested=el("button","tpl-btn","Use suggested checklist for this format");suggested.onclick=function(){d.nodes=buildSteps(STEPS[d.format]||["Script","Edit","Review"]);d.anchorDate="";drawBuilder();validate()};ui.body.appendChild(suggested);
-  ui.body.appendChild(el("strong","sop-builder-title","Subtasks"));
-  var reorderHelp=el("p","hint","Drag the ⋮⋮ handle to reorder steps. Drop between steps or on “Drop inside” to change groups. You can also use the arrows or Move menu.");ui.body.appendChild(reorderHelp);
+  var importSection=disclosure("Start from a checklist","Optional: copy an activity or use suggested steps");importSection.body.appendChild(field("Activity checklist",source,"Copies the steps so you can edit them here."));ui.body.appendChild(importSection.node);
+  var suggested=el("button","tpl-btn","Use suggested checklist for this format");suggested.onclick=function(){d.nodes=buildSteps(STEPS[d.format]||["Script","Edit","Review"]);d.anchorDate="";drawBuilder();validate()};importSection.body.appendChild(suggested);
+  var checklistHeading=el("div","sop-checklist-heading");checklistHeading.appendChild(el("h3",null,"Checklist"));var stepCount=el("span","sop-step-count");checklistHeading.appendChild(stepCount);ui.body.appendChild(checklistHeading);
+  var reorderHelp=el("p","hint sop-reorder-help","Drag to reorder. Use ⋯ to move, nest or remove a step.");ui.body.appendChild(reorderHelp);
   var moveAnnouncement=el("p","hint sop-move-status");moveAnnouncement.setAttribute("role","status");moveAnnouncement.setAttribute("aria-live","polite");
   ui.body.appendChild(builder);ui.body.appendChild(moveAnnouncement);ui.body.appendChild(hint);
   var save=el("button","btn btn-p sp","Save SOP");
-  var draggedId=null;
-  function moveStep(id,target,placement,focus){
+  var draggedId=null,collapsed={};
+  function moveStep(id,target,placement){
     var next=moveSopNode(d.nodes,id,target,placement);if(next===d.nodes)return false;
     var title=nodeById(next,id).title||"Untitled step";d.nodes=next;draggedId=null;
-    drawBuilder(focus?{id:id,control:focus}:null);validate();moveAnnouncement.textContent="Moved "+title+". Save SOP to keep the new order.";return true;
+    if(placement==="inside")collapsed[target]=false;
+    drawBuilder({id:id,control:"handle"});validate();moveAnnouncement.textContent="Moved "+title+". Save SOP to keep the new order.";return true;
   }
   function clearDrop(){builder.querySelectorAll(".drop-before,.drop-after,.drop-inside").forEach(function(n){n.classList.remove("drop-before","drop-after","drop-inside")})}
   function canDrop(target,placement){return !!draggedId&&moveSopNode(d.nodes,draggedId,target,placement)!==d.nodes}
   function drawBuilder(focus){
-    clear(builder);
-    builder.classList.remove("is-dragging");
+    builder.querySelectorAll("[popover]").forEach(function(menu){if(menu.matches(":popover-open"))menu.hidePopover()});
+    clear(builder);builder.classList.remove("is-dragging");
+    function total(nodes){return nodes.reduce(function(count,n){return count+1+total(kids(n))},0)}
+    stepCount.textContent=total(d.nodes)+" steps";
     function rows(nodes,depth){nodes.forEach(function(n,index){
-      var row=el("div","sop-step-row");row.style.marginLeft=(depth*14)+"px";
-      row.setAttribute("data-sop-row",n.id);
-      var handle=el("button","sop-drag-handle","⋮⋮");handle.type="button";handle.draggable=true;handle.title="Drag to move this step and its nested subtasks";
+      var group=kids(n).length>0,row=el("div","sop-step-row"+(group?" is-group":""));
+      row.style.setProperty("--step-depth",depth);row.setAttribute("data-sop-depth",depth);row.setAttribute("data-sop-row",n.id);
+      var handle=el("button","sop-drag-handle","⠿");handle.type="button";handle.draggable=true;handle.title="Drag to reorder. Arrow keys move this step; left/right changes nesting.";
       handle.setAttribute("aria-label","Drag SOP subtask "+(n.title||"untitled step"));handle.setAttribute("data-move-control","handle");
-      handle.ondragstart=function(e){draggedId=n.id;builder.classList.add("is-dragging");row.classList.add("is-drag-source");e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",n.id)};
+      handle.ondragstart=function(e){
+        draggedId=n.id;builder.classList.add("is-dragging");row.classList.add("is-drag-source");
+        e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",n.id);
+      };
       handle.ondragend=function(){draggedId=null;builder.classList.remove("is-dragging");clearDrop();row.classList.remove("is-drag-source")};
-      row.appendChild(handle);
-      row.ondragover=function(e){var bounds=row.getBoundingClientRect(),placement=e.clientY<bounds.top+bounds.height/2?"before":"after";if(!canDrop(n.id,placement))return;e.preventDefault();e.dataTransfer.dropEffect="move";clearDrop();row.classList.add("drop-"+placement)};
-      row.ondrop=function(e){e.preventDefault();e.stopPropagation();var bounds=row.getBoundingClientRect(),placement=e.clientY<bounds.top+bounds.height/2?"before":"after";if(draggedId)moveStep(draggedId,n.id,placement,"handle")};
-      var title=input("text",n.title,"Name this subtask");title.setAttribute("aria-label","Subtask title");title.setAttribute("data-sop-node",n.id);title.oninput=function(){d.nodes=patchNode(d.nodes,n.id,{title:title.value});validate()};row.appendChild(title);
-      function moveButton(label,text,target,placement,control){
-        var button=el("button","sop-move-button",text);button.type="button";button.title=label;button.setAttribute("aria-label",label+" "+(n.title||"untitled step"));button.setAttribute("data-move-control",control);
-        button.disabled=!target||moveSopNode(d.nodes,n.id,target.id,placement)===d.nodes;
-        button.onclick=function(){moveStep(n.id,target.id,placement,control)};return button;
+      handle.onkeydown=function(e){
+        var current=sopNodePosition(d.nodes,n.id),target=null,placement="before";
+        if(e.key==="ArrowUp")target=current.siblings[current.index-1];
+        else if(e.key==="ArrowDown"){target=current.siblings[current.index+1];placement="after"}
+        else if(e.key==="ArrowRight"){target=current.siblings[current.index-1];placement="inside"}
+        else if(e.key==="ArrowLeft"){target=current.parent;placement="after"}else return;
+        e.preventDefault();if(target)moveStep(n.id,target.id,placement);
+      };row.appendChild(handle);
+      if(group){
+        var toggle=el("button","sop-group-toggle",collapsed[n.id]?"▸":"▾");toggle.type="button";toggle.setAttribute("aria-label",(collapsed[n.id]?"Expand":"Collapse")+" group "+(n.title||"untitled step"));toggle.setAttribute("aria-expanded",String(!collapsed[n.id]));toggle.setAttribute("data-move-control","toggle");
+        toggle.onclick=function(){collapsed[n.id]=!collapsed[n.id];drawBuilder({id:n.id,control:"toggle"})};row.appendChild(toggle);
+      }else{var spacer=el("span","sop-group-spacer");spacer.setAttribute("aria-hidden","true");row.appendChild(spacer)}
+      var title=input("text",n.title,"Untitled step");title.setAttribute("aria-label","Subtask title");title.setAttribute("data-sop-node",n.id);title.oninput=function(){d.nodes=patchNode(d.nodes,n.id,{title:title.value});validate()};row.appendChild(title);
+      var count=el("span","sop-group-count",group?String(kids(n).length):"");if(group)count.title=kids(n).length+" nested steps";row.appendChild(count);
+      var actions=el("button","sop-actions-trigger","⋯");actions.type="button";actions.title="Step actions";actions.setAttribute("aria-label","Actions for SOP step "+(n.title||"untitled step"));actions.setAttribute("aria-haspopup","menu");actions.setAttribute("aria-expanded","false");row.appendChild(actions);
+      var menu=el("div","sop-actions-popover");menu.setAttribute("popover","auto");menu.setAttribute("role","menu");menu.setAttribute("aria-label","Actions for "+(n.title||"untitled step"));
+      function command(text,label,icon,fn,disabled,danger){
+        var button=el("button","sop-menu-command"+(danger?" danger":""));button.type="button";button.setAttribute("role","menuitem");button.setAttribute("aria-label",label);button.disabled=!!disabled;
+        var glyph=el("span","sop-command-icon",icon);glyph.setAttribute("aria-hidden","true");button.appendChild(glyph);button.appendChild(el("span",null,text));
+        button.onclick=function(){menu.hidePopover();fn()};menu.appendChild(button);return button;
       }
-      row.appendChild(moveButton("Move up","↑",nodes[index-1],"before","up"));row.appendChild(moveButton("Move down","↓",nodes[index+1],"after","down"));
-      var more=el("details","sop-move-menu"),summary=el("summary",null,"Move");summary.setAttribute("aria-label","More move options for "+(n.title||"untitled step"));more.appendChild(summary);
-      more.appendChild(moveButton("Move inside previous step:","Nest under previous step",nodes[index-1],"inside","nest"));
-      var position=sopNodePosition(d.nodes,n.id);more.appendChild(moveButton("Move out one level:","Move out one level",position.parent,"after","out"));row.appendChild(more);
-      if(depth<MAXDEPTH-1){var child=el("button","text-button","+ Nested");child.setAttribute("aria-label","Add nested subtask under "+(n.title||"untitled step"));child.onclick=function(){var fresh=newNode("","");d.nodes=addChild(d.nodes,n.id,fresh);drawBuilder(fresh.id);validate()};row.appendChild(child)}
-      var remove=el("button","text-button","Remove");remove.setAttribute("aria-label","Remove SOP subtask "+(n.title||"untitled step"));remove.onclick=function(){d.nodes=removeNode(d.nodes,n.id);drawBuilder();validate()};row.appendChild(remove);builder.appendChild(row);
-      if(depth<MAXDEPTH-1){
-        var inside=el("div","sop-drop-inside","Drop inside "+(n.title||"this step"));inside.style.marginLeft=((depth+1)*14)+"px";inside.setAttribute("data-sop-inside",n.id);
-        inside.ondragover=function(e){e.stopPropagation();if(!canDrop(n.id,"inside"))return;e.preventDefault();e.dataTransfer.dropEffect="move";clearDrop();inside.classList.add("drop-inside")};
-        inside.ondrop=function(e){e.preventDefault();e.stopPropagation();if(draggedId)moveStep(draggedId,n.id,"inside","handle")};builder.appendChild(inside);
-      }rows(kids(n),depth+1);
+      function moveCommand(text,label,icon,target,placement){
+        return command(text,label+" "+(n.title||"untitled step"),icon,function(){moveStep(n.id,target.id,placement)},!target||moveSopNode(d.nodes,n.id,target.id,placement)===d.nodes);
+      }
+      moveCommand("Move up","Move up","↑",nodes[index-1],"before");moveCommand("Move down","Move down","↓",nodes[index+1],"after");
+      moveCommand("Nest under previous step","Move inside previous step:","↳",nodes[index-1],"inside");
+      moveCommand("Move out one level","Move out one level:","↰",sopNodePosition(d.nodes,n.id).parent,"after");
+      var divider=el("div","sop-menu-divider");divider.setAttribute("role","separator");menu.appendChild(divider);
+      command("Add nested step","Add nested subtask under "+(n.title||"untitled step"),"+",function(){var fresh=newNode("","");d.nodes=addChild(d.nodes,n.id,fresh);collapsed[n.id]=false;drawBuilder(fresh.id);validate()},depth>=MAXDEPTH-1);
+      command("Remove step","Remove SOP subtask "+(n.title||"untitled step"),"−",function(){d.nodes=removeNode(d.nodes,n.id);drawBuilder();validate();moveAnnouncement.textContent="Step removed. Save SOP to keep this change."},false,true);
+      menu.ontoggle=function(){actions.setAttribute("aria-expanded",String(menu.matches(":popover-open")))};
+      menu.onkeydown=function(e){
+        var items=Array.from(menu.querySelectorAll("button:not(:disabled)")),i=items.indexOf(document.activeElement);
+        if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();items[(i+(e.key==="ArrowDown"?1:-1)+items.length)%items.length].focus()}
+        else if(e.key==="Home"||e.key==="End"){e.preventDefault();items[e.key==="Home"?0:items.length-1].focus()}
+        else if(e.key==="Escape"){e.preventDefault();e.stopPropagation();menu.hidePopover();actions.focus()}
+      };
+      actions.onclick=function(){
+        if(menu.matches(":popover-open")){menu.hidePopover();return}
+        menu.showPopover();var anchor=actions.getBoundingClientRect(),bounds=menu.getBoundingClientRect();
+        menu.style.left=Math.max(12,Math.min(anchor.right-bounds.width,window.innerWidth-bounds.width-12))+"px";
+        menu.style.top=Math.max(12,anchor.bottom+6+bounds.height>window.innerHeight-12?anchor.top-bounds.height-6:anchor.bottom+6)+"px";
+        var first=menu.querySelector("button:not(:disabled)");if(first)first.focus();
+      };
+      row.appendChild(menu);
+      function dropPlacement(e){var bounds=row.getBoundingClientRect(),fraction=(e.clientY-bounds.top)/bounds.height;
+        if(fraction>.25&&fraction<.75&&e.clientX>bounds.left+55&&canDrop(n.id,"inside"))return "inside";
+        return fraction<.5?"before":"after";
+      }
+      row.ondragover=function(e){var placement=dropPlacement(e);if(!canDrop(n.id,placement))return;e.preventDefault();e.dataTransfer.dropEffect="move";clearDrop();row.classList.add("drop-"+placement)};
+      row.ondragleave=function(e){if(!row.contains(e.relatedTarget))row.classList.remove("drop-before","drop-after","drop-inside")};
+      row.ondrop=function(e){e.preventDefault();e.stopPropagation();var placement=dropPlacement(e);if(draggedId)moveStep(draggedId,n.id,placement)};
+      builder.appendChild(row);if(!collapsed[n.id])rows(kids(n),depth+1);
     })}rows(d.nodes,0);
-    var add=el("button","tpl-btn","+ Add subtask");add.onclick=function(){var fresh=newNode("","");d.nodes=d.nodes.concat([fresh]);drawBuilder(fresh.id);validate()};builder.appendChild(add);
+    var add=el("button","sop-add-step","+ Add step");add.type="button";add.onclick=function(){var fresh=newNode("","");d.nodes=d.nodes.concat([fresh]);drawBuilder(fresh.id);validate()};builder.appendChild(add);
     if(focus){
       var control=typeof focus==="string"?builder.querySelector('[data-sop-node="'+focus+'"]'):builder.querySelector('[data-sop-row="'+focus.id+'"] [data-move-control="'+focus.control+'"]');
-      if(control&&control.disabled)control=builder.querySelector('[data-sop-row="'+focus.id+'"] .sop-drag-handle');
-      if(control){var menu=control.closest("details");if(menu)menu.open=true;control.focus()}
+      if(control)control.focus();
     }
   }
   function named(nodes){return nodes.length>0&&nodes.every(function(n){return !!n.title.trim()&&(!kids(n).length||named(kids(n)))})}

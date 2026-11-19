@@ -43,10 +43,12 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   steps, or start from an existing activity checklist. The source list shows the
   activity's date and campaign so repeated activities are distinguishable.
 - In **New SOP** or **Edit SOP**, drag a step by its **⋮⋮ handle** to change
-  order. Drop above/below another step, or use **Drop inside** to move it into
-  a group. Groups move with their nested steps. **↑ / ↓** reorder siblings;
-  **Move → Nest under previous step / Move out one level** changes grouping
-  on mobile or with a keyboard. Moves preserve step details, prevent loops,
+  order. A line marks a drop above/below another step; highlighting the centre
+  shows **Nest here** to move it inside. Groups move with their nested steps and
+  can collapse. Each compact row has one **⋯** menu for Move up/down, nesting,
+  adding a nested step, and removing a step. Menus stay within the viewport on
+  mobile. When the drag handle is focused, **↑ / ↓** reorder siblings and
+  **← / →** change nesting. Moves preserve step details, prevent loops,
   and respect the three-level limit. Choose **Save SOP** to keep the new order;
   existing activity checklists retain their current order.
 - Names are compared without case differences, Unicode presentation differences,
