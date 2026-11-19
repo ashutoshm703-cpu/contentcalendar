@@ -9,7 +9,7 @@ const context = {
 };
 vm.createContext(context);
 vm.runInContext(source.slice(0, source.indexOf('(function boot(){')).replace(/^render\(\);$/m, '') + `
-  globalThis.api={copyNodes,insertAfter,treeDepth,copyActivity,repeatDate,writeActivityCopies,applySopRules,saveActivityWithSops,subtaskLocation,saveSubtaskWithSops,storeSopRule,archiveSop,normalizeSopName,sopNameTaken,sopDisplayName,allSopRules,
+  globalThis.api={copyNodes,insertAfter,treeDepth,copyActivity,repeatDate,writeActivityCopies,applySopRules,saveActivityWithSops,subtaskLocation,saveSubtaskWithSops,storeSopRule,archiveSop,normalizeSopName,sopNameTaken,sopDisplayName,allSopRules,moveSopNode,sopNodePosition,
     setDB(value){db=value;render=function(){}},setSops(rules,ready=true){S.sopRules=rules;S.sopReady=ready;S.templatesLoading=false;S.templateError=""},setTemplates(rows){S.templates=rows},getRules(){return S.sopRules}};
 })();`, context);
 const api = context.api;
@@ -35,6 +35,25 @@ assert.equal(sibling[0].children.length, 3);
 assert.equal(sibling[0].children[1].id, copied[0].children[0].id);
 assert.equal(nodes[0].children.length, 2);
 assert.equal(api.treeDepth(nodes), 2);
+const moveTree=[...nodes,{id:'other',title:'Other group',children:[{id:'last',title:'Last',owner:'writer',done:true,children:[]}]}];
+const originalMoveTree=JSON.stringify(moveTree);
+const rootMoved=api.moveSopNode(moveTree,'other','group','before');
+assert.equal(rootMoved[0].id,'other');assert.equal(rootMoved[0].children[0].owner,'writer');
+const reordered=api.moveSopNode(moveTree,'undated','leaf','before');
+assert.deepEqual(Array.from(reordered[0].children,n=>n.id),['undated','leaf']);
+const crossGroup=api.moveSopNode(moveTree,'leaf','last','after');
+assert.equal(crossGroup[0].children.length,1);assert.deepEqual(Array.from(crossGroup[1].children,n=>n.id),['last','leaf']);
+assert.equal(crossGroup[1].children[1].done,true);assert.equal(crossGroup[1].children[1].due,'2026-11-19');
+const nested=api.moveSopNode(moveTree,'last','leaf','inside');
+assert.equal(nested[0].children[0].children[0].id,'last');
+const outdented=api.moveSopNode(nested,'last','group','after');
+assert.deepEqual(Array.from(outdented,n=>n.id),['group','last','other']);
+assert.equal(api.moveSopNode(nested,'group','last','inside'),nested);
+assert.equal(api.moveSopNode(nested,'other','last','inside'),nested);
+assert.equal(api.moveSopNode(moveTree,'group','group','after'),moveTree);
+assert.equal(api.moveSopNode(moveTree,'missing','leaf','after'),moveTree);
+assert.equal(api.moveSopNode(moveTree,'leaf','last','invalid'),moveTree);
+assert.equal(JSON.stringify(moveTree),originalMoveTree);
 const activity = { id:'activity',title:'YouTube live',campaignId:'campaign',dueDate:'2026-11-19',
   status:'Published',assets:{link:'old output'},subtasks:nodes,repeat:{seriesId:'old'},script:'Keep script' };
 const copy = api.copyActivity(activity, '2026-12-03', 'other');
