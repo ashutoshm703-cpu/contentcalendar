@@ -527,7 +527,10 @@ function renderFocus(box,from,to,showDates){
         cb.title="Mark done";
         cb.onclick=function(){saveSubs(it.a,patchNode(it.a.subtasks,x.n.id,{done:true}))};
         r.appendChild(cb);
-        r.appendChild(el("span","sub-t",x.n.title));
+        var subTitle=el("button","sub-t sub-title-button",x.n.title);
+        subTitle.setAttribute("aria-label","Edit subtask: "+x.n.title);
+        subTitle.onclick=function(){openSubtask(it.a,x.n)};r.appendChild(subTitle);
+        if(writable())r.appendChild(subtaskEditButton(it.a,x.n));
         var mt=el("span","sub-meta");
         if(showDates&&x.n.due)mt.appendChild(el("span",null,fmtShort(x.n.due)));
         if(x.path)mt.appendChild(el("span","sub-kind",x.path));
@@ -535,6 +538,7 @@ function renderFocus(box,from,to,showDates){
         if(x.n.kind)mt.appendChild(el("span","sub-kind",x.n.kind));
         if(x.n.owner)mt.appendChild(uname(x.n.owner));
         r.appendChild(mt);
+        if(x.n.description)r.appendChild(el("p","sub-description",x.n.description));
         sl.appendChild(r);
       });
       bd.appendChild(sl);
@@ -712,7 +716,14 @@ function renderCampaigns(main){
 var wq=Promise.resolve();
 function sid(){return "s"+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
 function newNode(title,kind,plat){
-  return {id:sid(),title:title,done:false,owner:"",due:"",kind:kind||"",platform:plat||"",children:[]};
+  return {id:sid(),title:title,description:"",done:false,owner:"",due:"",kind:kind||"",platform:plat||"",children:[]};
+}
+function nodeById(nodes,id){
+  for(var i=0;i<(nodes||[]).length;i++){
+    if(nodes[i].id===id)return nodes[i];
+    var found=nodeById(kids(nodes[i]),id);if(found)return found;
+  }
+  return null;
 }
 function platAbbr(p){
   for(var i=0;i<PLATFORMS.length;i++)if(PLATFORMS[i][0]===p)return PLATFORMS[i][1];
@@ -846,7 +857,10 @@ function subNodes(host,a,nodes,depth){
       cb.onclick=function(){saveSubs(a,patchNode(a.subtasks,s.id,{done:!s.done}))};
       r.appendChild(cb);
     }
-    r.appendChild(el("span","sub-t"+(nodeDone(s)?" done":""),s.title));
+    var subTitle=el("button","sub-t sub-title-button"+(nodeDone(s)?" done":""),s.title);
+    subTitle.setAttribute("aria-label","Edit subtask: "+s.title);
+    subTitle.onclick=function(){openSubtask(a,s)};r.appendChild(subTitle);
+    if(writable())r.appendChild(subtaskEditButton(a,s));
     var mt=el("span","sub-meta");
     if(group){
       var n=nodeCount(s),pg=el("span","sub-count",n[0]+"/"+n[1]);
@@ -891,6 +905,7 @@ function subNodes(host,a,nodes,depth){
       x.onclick=function(){confirmRemoval(r,group?"Remove this group and everything inside it?":"Remove this checklist item?",function(){saveSubs(a,removeNode(a.subtasks,s.id))})};
       r.appendChild(x);
     }
+    if(s.description)r.appendChild(el("p","sub-description",s.description));
     host.appendChild(r);
     if(S.placeFor===s.id&&writable()&&depth<MAXDEPTH-1){
       host.appendChild(placementPicker(s,function(nodes){
@@ -1103,7 +1118,12 @@ function paintNames(){
 
 /* ─── overlay plumbing ──────────────────────────────────── */
 var overlayState=null,fieldCount=0;
+function hasOverlayChanges(){
+  for(var state=overlayState;state;state=state.parent)if(state.dirty&&state.dirty())return true;
+  return false;
+}
 function closeOverlay(force){
+  if(overlayState&&overlayState.busy&&force!==true)return;
   if(overlayState&&overlayState.dirty&&overlayState.dirty()&&force!==true){
     var dialog=overlayState.node,old=dialog.querySelector(".discard-notice");
     if(old){old.querySelector("button").focus();return}
@@ -1114,14 +1134,19 @@ function closeOverlay(force){
     discard.onclick=function(){closeOverlay(true)};
     notice.appendChild(keep);notice.appendChild(discard);dialog.querySelector(".p-foot").prepend(notice);keep.focus();return;
   }
-  var previous=overlayState&&overlayState.previous;
-  clear($("overlay"));overlayState=null;document.body.style.overflow="";
-  document.querySelector(".topbar").inert=false;$("workspace").inert=false;
-  if(previous&&previous.isConnected)previous.focus();else if($("new-act")&&!$("new-act").hidden)$("new-act").focus();
+  var closed=overlayState,previous=closed&&closed.previous;
+  clear($("overlay"));overlayState=closed&&closed.parent;
+  if(overlayState)(closed.parentNodes||[]).forEach(function(n){$("overlay").appendChild(n)});
+  document.body.style.overflow=overlayState?"hidden":"";
+  document.querySelector(".topbar").inert=!!overlayState;$("workspace").inert=!!overlayState;
+  if(previous&&previous.isConnected)previous.focus();
+  else if(overlayState){var focus=overlayState.node.querySelector("input,button");if(focus)focus.focus()}
+  else if($("new-act")&&!$("new-act").hidden)$("new-act").focus();
 }
-function overlay(node,dirty){
-  overlayState={node:node,dirty:dirty,previous:document.activeElement};
-  var o=$("overlay");clear(o);
+function overlay(node,dirty,preserveParent){
+  var o=$("overlay"),parent=preserveParent?overlayState:null;
+  overlayState={node:node,dirty:dirty,previous:document.activeElement,parent:parent,parentNodes:parent?Array.from(o.childNodes):null};
+  clear(o);
   var sc=el("div","scrim");sc.onclick=closeOverlay;
   o.appendChild(sc);o.appendChild(node);
   document.body.style.overflow="hidden";
@@ -1144,7 +1169,7 @@ document.addEventListener("keydown",function(e){
     else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}
   }
 });
-window.addEventListener("beforeunload",function(e){if(overlayState&&overlayState.dirty&&overlayState.dirty()){e.preventDefault();e.returnValue=""}});
+window.addEventListener("beforeunload",function(e){if(hasOverlayChanges()){e.preventDefault();e.returnValue=""}});
 
 function field(label,control,hintText,hintCls){
   var w=el("div","field"),lab=el("label",null,label);lab.id="field-label-"+(++fieldCount);
@@ -1217,6 +1242,72 @@ function ownerPicker(current,onPick){
   box.addEventListener("focusout",function(){setTimeout(function(){if(!box.contains(document.activeElement))shut()},180)});
   if(!U||!U.search){inp.disabled=true;inp.placeholder="Team directory unavailable"}
   return box;
+}
+
+/* Subtask details are saved together; the parent activity draft stays intact. */
+function subtaskEditButton(a,s,onSaved){
+  var edit=el("button","sub-edit","Edit details");
+  edit.setAttribute("aria-label","Edit details for "+(s.title||"Untitled subtask"));
+  edit.onclick=function(){openSubtask(a,s,onSaved)};return edit;
+}
+function openSubtask(a,s,onSaved){
+  var original={title:s.title||"",description:s.description||"",owner:s.owner||"",due:s.due||"",platform:s.platform||"",kind:s.kind||""};
+  var draft=Object.assign({},original),saving=false;
+  var dialog=el("div","modal subtask-modal");dialog.setAttribute("role","dialog");dialog.setAttribute("aria-label","Edit subtask");
+  var head=el("div","p-head");head.appendChild(el("h2",null,"Subtask details"));
+  var close=el("button","x","✕");close.onclick=closeOverlay;head.appendChild(close);dialog.appendChild(head);
+  var body=el("div","p-body");dialog.appendChild(body);
+  body.appendChild(el("p","form-intro","Part of "+a.title+(kids(s).length?". This group contains other checklist items.":".")));
+  var title=input("text",draft.title,"What needs to be done?");title.required=true;
+  title.oninput=function(){draft.title=title.value;validate()};body.appendChild(field("Subtask name *",title));
+  var description=el("textarea","subtask-description-input");description.value=draft.description;description.rows=5;
+  description.placeholder="Add instructions, context, links or acceptance criteria…";
+  description.oninput=function(){draft.description=description.value};
+  body.appendChild(field("Description (optional)",description,"Include anything the person doing this task needs to know."));
+  var planning=el("div","f2"),date=input("date",draft.due);
+  date.oninput=function(){draft.due=date.value};planning.appendChild(field("Due date (optional)",date));
+  planning.appendChild(field("Owner (optional)",ownerPicker(draft.owner,function(id){draft.owner=id})));body.appendChild(planning);
+  var details=disclosure("More details","Platform & type");
+  var platform=dropdown(PLATFORMS.map(function(p){return[p[0],p[0]]}),draft.platform,"Not set");
+  platform.onchange=function(){draft.platform=platform.value};details.body.appendChild(field("Platform",platform));
+  var kind=dropdown(SUBKINDS.map(function(k){return[k,k]}),draft.kind,"Not set");
+  kind.onchange=function(){draft.kind=kind.value};details.body.appendChild(field("Type",kind));body.appendChild(details.node);
+  var err=el("p","hint err");err.hidden=true;err.setAttribute("role","alert");body.appendChild(err);
+  var foot=el("div","p-foot"),note=el("p","required-note","Save to update this subtask. Other checklist items stay as they are.");
+  foot.appendChild(note);
+  var cancel=el("button","btn btn-o","Cancel");cancel.onclick=function(){closeOverlay()};foot.appendChild(cancel);
+  var save=el("button","btn btn-p sp","Save subtask");foot.appendChild(save);dialog.appendChild(foot);
+  function validate(){save.disabled=saving||!draft.title.trim()||!writable();return !save.disabled}
+  save.onclick=function(){
+    if(!validate())return;
+    var changes={};Object.keys(original).forEach(function(key){var value=key==="title"?draft[key].trim():draft[key];if(value!==original[key])changes[key]=value});
+    if(!Object.keys(changes).length){closeOverlay(true);return}
+    saving=true;validate();save.textContent="Saving…";err.hidden=true;cancel.disabled=true;close.disabled=true;
+    body.querySelectorAll("input,textarea,select,button").forEach(function(control){control.disabled=true});
+    var editingState=overlayState;editingState.busy=true;
+    var savedActivity;
+    var write=wq.then(function(){
+      var current=S.activities.filter(function(item){return item.id===a.id})[0]||a;
+      if(!nodeById(current.subtasks,s.id)){var missing=new Error("Subtask no longer exists");missing.code="not-found";throw missing}
+      var updated=patchNode(current.subtasks,s.id,changes);
+      return db.doc("activities/"+a.id).update({subtasks:updated}).then(function(){current.subtasks=updated;a.subtasks=updated;savedActivity=current});
+    });
+    wq=write.catch(function(){});
+    write.then(function(){
+      editingState.busy=false;
+      if(overlayState===editingState)closeOverlay(true);
+      if(onSaved)onSaved(savedActivity);
+      render();
+      if(overlayState){var savedNote=overlayState.node.querySelector(".autosave-note");if(savedNote)savedNote.textContent="Subtask saved. Status and checklist changes save automatically."}
+      else toast("Subtask saved");
+    }).catch(function(e){
+      editingState.busy=false;saving=false;validate();save.textContent="Save subtask";cancel.disabled=false;close.disabled=false;
+      body.querySelectorAll("input,textarea,select,button").forEach(function(control){control.disabled=false});
+      err.textContent=msgFor(e);err.hidden=false;
+    });
+  };
+  clear($("toasts"));
+  validate();overlay(dialog,function(){return JSON.stringify(draft)!==JSON.stringify(original)},true);
 }
 
 /* ─── activity panel ────────────────────────────────────── */
@@ -1403,6 +1494,8 @@ function openActivity(a,presetDate,presetCampaign,preset){
           patchSub(s.id,{title:v||s.title});
         };
         r.appendChild(ti);
+        r.appendChild(subtaskEditButton(a,s,function(current){a.subtasks=current.subtasks;drawSubs(null)}));
+        if(s.description)r.appendChild(el("p","sub-description",s.description));
         if(depth<MAXDEPTH-1){
           var pc=el("button","sub-x place","⊞");
           pc.title="This creative goes to several placements — add them";
@@ -1716,7 +1809,7 @@ function emailAllowed(e){
 
 /* The sign-in screen. One job, one button. */
 function showGate(kind,extra){
-  if(overlayState)closeOverlay(true);
+  while(overlayState)closeOverlay(true);
   document.querySelector(".topbar").inert=true;$("workspace").inert=true;
   var g=$("gate");clear(g);g.hidden=false;
   g.setAttribute("role","dialog");g.setAttribute("aria-modal","true");g.setAttribute("aria-label","Sign in to Content calendar");
