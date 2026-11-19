@@ -1590,6 +1590,12 @@ function showGate(kind,extra){
 function startData(){
   subs.forEach(function(f){try{f()}catch(e){}});subs=[];
   S.loading=true;S.err=null;pending=3;render();
+  var waiting={campaigns:true,activities:true,users:true};
+  function received(key,snap){
+    if(waiting[key]&&(!snap||!snap.metadata.fromCache)){
+      waiting[key]=false;settled();
+    }
+  }
   if(timer)clearTimeout(timer);
   timer=setTimeout(function(){if(S.loading){S.stale=true;render()}},10000);
   var onErr=function(e){
@@ -1597,24 +1603,24 @@ function startData(){
     if(timer){clearTimeout(timer);timer=null}
     render();
   };
-  subs.push(db.collection("campaigns").onSnapshot(function(snap){
+  subs.push(db.collection("campaigns").onSnapshot({includeMetadataChanges:true},function(snap){
     S.campaigns=snap.docs.map(function(d){var o=Object.assign({},d.data());o.id=d.id;return o});
     sortCampaigns();
-    if(!snap.metadata.fromCache)settled();else render();
+    received("campaigns",snap);render();
   },onErr));
-  subs.push(db.collection("activities").onSnapshot(function(snap){
+  subs.push(db.collection("activities").onSnapshot({includeMetadataChanges:true},function(snap){
     S.activities=snap.docs.map(function(d){var o=Object.assign({},d.data());o.id=d.id;return o});
-    if(!snap.metadata.fromCache)settled();else render();
+    received("activities",snap);render();
   },onErr));
   /* the team roster, so owners resolve to real names */
-  subs.push(db.collection("users").onSnapshot(function(snap){
+  subs.push(db.collection("users").onSnapshot({includeMetadataChanges:true},function(snap){
     S.team=snap.docs.map(function(d){
       var v=d.data()||{};
       return {id:d.id,name:v.name||v.email||"Teammate"};
     });
     S.team.forEach(function(p){S.profiles[p.id]={name:p.name}});
-    if(!snap.metadata.fromCache)settled();else render();
-  },function(){settled()}));
+    received("users",snap);render();
+  },function(){received("users")}));
 }
 
 /* Stands in for the identity the artifact runtime used to provide. */
