@@ -15,10 +15,10 @@
  *   7. Firestore → Rules → paste the contents of firestore.rules and publish
  */
 window.FIREBASE_CONFIG = {
-  apiKey: "PASTE_API_KEY",
-  authDomain: "PASTE_PROJECT.firebaseapp.com",
-  projectId: "PASTE_PROJECT",
-  storageBucket: "PASTE_PROJECT.firebasestorage.app",
-  messagingSenderId: "PASTE_SENDER_ID",
-  appId: "PASTE_APP_ID"
+  apiKey: "AIzaSyAlE7Olc49cSQoJG3AzscE84yn9ZYnhxVk",
+  authDomain: "nprep-content-calendar.firebaseapp.com",
+  projectId: "nprep-content-calendar",
+  storageBucket: "nprep-content-calendar.firebasestorage.app",
+  messagingSenderId: "111640002481",
+  appId: "1:111640002481:web:7f2637f55915d69ee38790"
 };
