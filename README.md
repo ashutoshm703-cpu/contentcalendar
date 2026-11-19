@@ -57,6 +57,18 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   this is a finite series, with no background scheduler or series-wide edits.
   Monthly repeats preserve the original day where possible and use the last
   day in shorter months. Campaign duplication is atomic, with up to 499 activities.
+- **SOP rules** beside the workspace heading automatically attach checklists
+  based on platform and format. A starter **YouTube + Long form** rule uses the
+  suggested production checklist. Edit it to select your own saved group, or
+  create rules for other formats/platforms. Either condition can be Any, with at
+  least one specific condition required. Rules can be paused and enabled.
+- Matching steps are previewed in new activity forms, and applied on creation,
+  including Quick Add and every occurrence in a new recurring series. Saving an
+  existing activity also applies any matching rule that hasn't run on it before.
+  Existing steps and completion are preserved; matching titles and platforms are
+  merged to avoid duplicates. Each rule runs once per activity. Editing, pausing
+  or deleting a rule leaves already-added steps intact. Copies retain the source
+  checklist and rule history. A rule stores its own snapshot of a saved group.
 - Form labels, dialog focus, view-tab keyboard navigation and visible focus
   indicators support keyboard use. Optional fields are identified in the forms.
 
@@ -119,6 +131,11 @@ Collections:
   createdAt. Publish the updated `firestore.rules` to enable this collection
   before using saved groups. Existing task and campaign operations continue
   to work if template permissions have not yet been published.
+- `sopRules/{id}` — automatic checklist rules: name, platform, format, enabled,
+  nodes[], anchorDate, createdAt. Activities record applied rule IDs in
+  `appliedSopRules[]`. Publish the updated Firestore rules before deploying SOP
+  code; the app waits for rule configuration before allowing activity creation.
+  Existing activity details and new SOP steps are saved in a transaction.
 
 Repeated activities also carry `repeat` metadata with a series ID, frequency,
 occurrence index and count. Duplicating an activity starts an independent copy.

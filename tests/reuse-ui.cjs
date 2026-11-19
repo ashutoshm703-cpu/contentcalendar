@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const root = path.join(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 const seed = `
-  S.loading=false;S.canWrite=true;S.templatesLoading=false;S.me={id:'owner',name:'Test owner'};
+  S.loading=false;S.canWrite=true;S.templatesLoading=false;S.sopReady=true;S.me={id:'owner',name:'Test owner'};
   S.team=[{id:'owner',name:'Test owner'}];S.profiles={owner:{name:'Test owner'}};U=makeUser();
   S.campaigns=[{id:'c1',name:'Live campaign',goal:'Teach',startDate:'2026-11-01',endDate:'2026-11-30',owner:'owner',status:'Live',colour:'#131B63',createdAt:'2026-11-01'}];
   S.activities=[{id:'a1',campaignId:'c1',title:'YouTube live',type:'Live',dueDate:'2026-11-19',dueTime:'18:00',status:'Published',owner:'owner',script:'Live script',assets:{url:'old'},subtasks:[
@@ -18,7 +18,7 @@ const seed = `
     ]}
   ]}];
   let nextId=0;window.fixture={S,failNext:false};
-  function list(collection){return collection==='campaigns'?S.campaigns:collection==='activities'?S.activities:S.templates}
+  function list(collection){return collection==='campaigns'?S.campaigns:collection==='activities'?S.activities:collection==='sopRules'?S.sopRules:S.templates}
   function apply(ref,data,remove){
     const parts=ref.path.split('/'),rows=list(parts[0]),i=rows.findIndex(r=>r.id===parts[1]);
     if(remove){if(i>=0)rows.splice(i,1)}else if(i>=0)rows[i]=Object.assign({},rows[i],data);else rows.push(Object.assign({},data,{id:parts[1]}));
@@ -27,9 +27,10 @@ const seed = `
     if(window.fixture.failNext){window.fixture.failNext=false;return Promise.reject({code:'permission-denied'})}
     writes.forEach(w=>apply(w.ref,JSON.parse(JSON.stringify(w.data||{})),w.remove));render();return Promise.resolve();
   }
-  function ref(p){return {id:p.split('/')[1],path:p,update(data){return commit([{ref:this,data}])},delete(){return commit([{ref:this,remove:true}])}}}
+  function ref(p){return {id:p.split('/')[1],path:p,set(data){return commit([{ref:this,data}])},update(data){return commit([{ref:this,data}])},delete(){return commit([{ref:this,remove:true}])}}}
   db={collection(name){return {doc(id){return ref(name+'/'+(id||'fixture'+(++nextId)))},add(data){const r=this.doc();return commit([{ref:r,data}]).then(()=>r)}}},
-    doc:ref,batch(){const writes=[];return {set(ref,data){writes.push({ref,data})},commit(){return commit(writes)}}}};
+    doc:ref,batch(){const writes=[];return {set(ref,data){writes.push({ref,data})},commit(){return commit(writes)}}},
+    async runTransaction(fn){const writes=[];await fn({async get(ref){const parts=ref.path.split('/'),data=list(parts[0]).find(r=>r.id===parts[1]);return {exists:!!data,data(){return data}}},update(ref,data){writes.push({ref,data})}});return commit(writes)}};
   S.view='campaigns';S.expanded={cc1:true,aa1:true};render();
 })();`;
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
@@ -143,10 +144,78 @@ async function waitFor(page,fn){await page.waitForFunction(fn)}
   await page.screenshot({path:path.join(root,'output/playwright/reuse-mobile.png'),animations:'disabled'});
   await dialog.getByRole('button',{name:'Close dialog',exact:true}).click();
   await dialog.getByRole('button',{name:'Discard changes',exact:true}).click();
+  // Turn the saved group into an SOP for YouTube long form.
+  await page.getByRole('button',{name:'SOP rules',exact:true}).click();
+  dialog=page.getByRole('dialog',{name:'SOP rules',exact:true});
+  await dialog.getByRole('button',{name:'Edit rule YouTube long form SOP',exact:true}).click();
+  child=page.getByRole('dialog',{name:'Edit SOP rule',exact:true});
+  await child.getByLabel('Rule name *',{exact:true}).fill('Long form publishing SOP');
+  const templateId=(await state(page)).templates[0].id;
+  await child.getByLabel('Checklist to add *',{exact:true}).selectOption(templateId);
+  await child.getByRole('button',{name:'Save rule',exact:true}).click();
+  await dialog.waitFor();
+  assert.equal((await state(page)).sopRules[0].name,'Long form publishing SOP');
+  await dialog.getByRole('button',{name:'New rule',exact:true}).click();
+  child=page.getByRole('dialog',{name:'New SOP rule',exact:true});
+  await child.getByLabel('Rule name *',{exact:true}).fill('Reel publishing SOP');
+  assert.equal(await child.getByRole('button',{name:'Save rule',exact:true}).isDisabled(),true);
+  await child.getByLabel('Platform',{exact:true}).selectOption('Instagram');
+  await child.getByLabel('Format',{exact:true}).selectOption('Reel');
+  await child.getByLabel('Checklist to add *',{exact:true}).selectOption(templateId);
+  await child.getByRole('button',{name:'Save rule',exact:true}).click();
+  await dialog.waitFor();
+  assert.equal((await state(page)).sopRules.length,2);
+  await dialog.getByRole('button',{name:'Done',exact:true}).click();
+  await page.getByRole('tab',{name:'Next 7 days',exact:true}).click();
+  await page.locator('#new-act').click();
+  dialog=page.getByRole('dialog',{name:'New activity',exact:true});
+  await dialog.getByLabel('Activity title *',{exact:true}).fill('SOP create');
+  await dialog.getByLabel('Campaign *',{exact:true}).selectOption('c1');
+  await dialog.getByLabel('Format',{exact:true}).selectOption('Long form');
+  await dialog.getByText('Added automatically by SOP rules',{exact:true}).waitFor();
+  await dialog.getByText('Long form publishing SOP',{exact:true}).waitFor();
+  assert.equal(await dialog.getByText('Reel publishing SOP',{exact:true}).count(),0);
+  await dialog.getByLabel('Due date *',{exact:true}).fill('2026-12-03');
+  await dialog.getByRole('button',{name:'Create activity',exact:true}).click();
+  await waitFor(page,()=>fixture.S.activities.some(a=>a.title==='SOP create'));
+  s=await state(page);activity=s.activities.find(a=>a.title==='SOP create');
+  assert.equal(activity.subtasks.length,1);assert.equal(activity.subtasks[0].due,'2026-12-02');
+  assert.deepEqual(activity.appliedSopRules,['builtin-youtube-long-form']);
+  // Quick Add uses the same rule engine; saving an existing match keeps one checklist.
+  await page.getByRole('tab',{name:'Campaigns',exact:true}).click();
+  const quick=page.locator('.qadd').filter({has:page.getByLabel('Activity title for Live campaign',{exact:true})});
+  await quick.getByLabel('Activity title for Live campaign',{exact:true}).fill('Quick SOP');
+  await quick.getByLabel('Activity format',{exact:true}).selectOption('Long form');
+  await quick.getByRole('button',{name:'Add',exact:true}).click();
+  await waitFor(page,()=>fixture.S.activities.some(a=>a.title==='Quick SOP'));
+  assert.equal((await state(page)).activities.find(a=>a.title==='Quick SOP').subtasks.length,1);
+  await page.locator('.row-main').filter({hasText:'SOP create'}).click();
+  dialog=page.getByRole('dialog',{name:'Activity',exact:true});
+  await dialog.getByRole('button',{name:'Save changes',exact:true}).click();
+  await waitFor(page,()=>!document.querySelector('[role="dialog"]'));
+  assert.equal((await state(page)).activities.find(a=>a.title==='SOP create').subtasks.length,1);
+  await page.getByRole('button',{name:'SOP rules',exact:true}).click();
+  dialog=page.getByRole('dialog',{name:'SOP rules',exact:true});
+  await dialog.getByRole('button',{name:'Pause rule Long form publishing SOP',exact:true}).click();
+  await dialog.getByRole('button',{name:'Enable rule Long form publishing SOP',exact:true}).waitFor();
+  await dialog.getByRole('button',{name:'Done',exact:true}).click();
+  await quick.getByLabel('Activity title for Live campaign',{exact:true}).fill('Paused SOP');
+  await quick.getByLabel('Activity format',{exact:true}).selectOption('Long form');
+  await quick.getByRole('button',{name:'Add',exact:true}).click();
+  await waitFor(page,()=>fixture.S.activities.some(a=>a.title==='Paused SOP'));
+  assert.equal((await state(page)).activities.find(a=>a.title==='Paused SOP').subtasks.length,0);
+  await page.getByRole('button',{name:'SOP rules',exact:true}).click();
+  dialog=page.getByRole('dialog',{name:'SOP rules',exact:true});
+  await dialog.getByRole('button',{name:'Enable rule Long form publishing SOP',exact:true}).click();
+  await dialog.getByRole('button',{name:'Pause rule Long form publishing SOP',exact:true}).waitFor();
+  fs.mkdirSync(path.join(root,'output/playwright'),{recursive:true});
+  await page.screenshot({path:path.join(root,'output/playwright/sop-rules-mobile.png'),animations:'disabled'});
+  await dialog.getByRole('button',{name:'Done',exact:true}).click();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   await page.screenshot({path:path.join(root,'output/playwright/reuse-campaigns-mobile.png'),animations:'disabled'});
   await page.setViewportSize({width:1280,height:1000});
   await page.screenshot({path:path.join(root,'output/playwright/reuse-campaigns-desktop.png'),animations:'disabled'});
   assert.deepEqual(errors,[]);
   console.log('PASS: campaign/activity/nested subtask duplication, saved groups, new weekly series, retry, monthly repeats, draft preservation, mobile layout');
+  console.log('PASS: editing/creating SOP rules, automatic previews, quick add, date offsets, idempotent saves, pause/enable, mobile rules');
 })().catch(e=>{console.error(e);process.exitCode=1}).finally(async()=>{if(browser)await browser.close();server.close()});

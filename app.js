@@ -112,7 +112,8 @@ var S={campaigns:[],activities:[],view:"calendar",calView:"next7",anchor:"",y:0,
   filters:{campaign:"",platform:"",format:"",owner:"",status:""},
   loading:true,stale:false,err:null,canWrite:null,open:null,expanded:{},focusAdd:null,lastAdd:{},
   placeFor:null,showFilters:false,me:null,team:[],
-  profiles:{},dayMax:3,query:"",focusDay:"",templates:[],templateError:"",templatesLoading:true};
+  profiles:{},dayMax:3,query:"",focusDay:"",templates:[],templateError:"",templatesLoading:true,
+  sopRules:[],sopReady:false};
 var db=null,U=null,phone=false;
 var $=function(id){return document.getElementById(id)};
 
@@ -267,6 +268,9 @@ function renderHead(){
   add.hidden=S.loading||!S.me||!writable()||!S.campaigns.length;
   add.onclick=!cal?function(){openCampaign(null)}:function(){openActivity(null,S.calView==="next7"?S.focusDay:undefined)};
   heading.appendChild(add);box.appendChild(heading);
+  if(S.me&&!S.loading&&writable()){
+    var rules=el("button","text-button sop-manage","SOP rules");rules.onclick=openSopRules;heading.appendChild(rules);
+  }
   var ctl=el("div","pctl");
   if(cal&&(S.calView==="week"||S.calView==="month")){
     var nav=el("div","nav");
@@ -947,6 +951,119 @@ function subReuseActions(a,s,depth,onChange){
   })});return menu;
 }
 
+/* SOP rules attach fresh steps once per rule. Editing or pausing a rule never
+   rewrites the work already attached to an activity. */
+var DEFAULT_SOP={id:"builtin-youtube-long-form",name:"YouTube long form SOP",platform:"YouTube",format:"Long form",enabled:true,source:"suggested"};
+function allSopRules(){
+  var rules=S.sopRules.slice();
+  if(!rules.some(function(r){return r.id===DEFAULT_SOP.id}))rules.unshift(DEFAULT_SOP);
+  return rules;
+}
+function sopMatches(a){
+  if(!S.sopReady)return [];
+  return allSopRules().filter(function(r){return r.enabled&&(!r.format||r.format===a.type)&&
+    (!r.platform||(a.platforms||[]).indexOf(r.platform)>=0)});
+}
+function sopNodes(rule){return rule.nodes||buildSteps(STEPS[rule.format]||["Script","Edit","Review"])}
+function mergeSopNodes(existing,incoming){
+  var out=(existing||[]).slice();
+  (incoming||[]).forEach(function(n){
+    var match=out.findIndex(function(old){return String(old.title||"").trim().toLowerCase()===String(n.title||"").trim().toLowerCase()&&
+      (old.platform||"")===(n.platform||"")&&!!kids(old).length===!!kids(n).length});
+    if(match<0)out.push(n);
+    else if(kids(n).length)out[match]=Object.assign({},out[match],{children:mergeSopNodes(kids(out[match]),kids(n))});
+  });return out;
+}
+function applySopRules(a){
+  var nodes=a.subtasks||[],applied=(a.appliedSopRules||[]).slice();
+  sopMatches(a).forEach(function(rule){
+    if(applied.indexOf(rule.id)>=0)return;
+    var offset=rule.anchorDate&&a.dueDate?daysBetween(rule.anchorDate,a.dueDate):0;
+    nodes=mergeSopNodes(nodes,copyNodes(sopNodes(rule),offset));applied.push(rule.id);
+  });return Object.assign({},a,{subtasks:nodes,appliedSopRules:applied});
+}
+function saveActivityWithSops(id,patch){
+  return wq.then(function(){return db.runTransaction(function(tx){
+    var ref=db.doc("activities/"+id);
+    return tx.get(ref).then(function(snap){
+      if(!snap.exists){var e=new Error();e.code="not-found";throw e}
+      var current=snap.data(),next=applySopRules(Object.assign({},current,patch)),update=Object.assign({},patch);
+      if(JSON.stringify(next.appliedSopRules)!==JSON.stringify(current.appliedSopRules||[])){
+        update.subtasks=next.subtasks;update.appliedSopRules=next.appliedSopRules;
+      }tx.update(ref,update);
+    });
+  })});
+}
+function storeSopRule(rule){
+  var payload=Object.assign({},rule);delete payload.id;
+  var ref=rule.id?db.doc("sopRules/"+rule.id):db.collection("sopRules").doc();
+  return ref.set(payload).then(function(){
+    S.sopRules=S.sopRules.filter(function(r){return r.id!==ref.id}).concat([Object.assign({},payload,{id:ref.id})]);render();
+  });
+}
+function openSopRules(){
+  if(!writable())return;
+  var ui=actionDialog("SOP rules","Automatically add steps when an activity matches a platform and format. Rules apply when creating or saving an activity. Existing work is kept, and each rule runs once per activity.");
+  ui.cancel.textContent="Done";
+  var list=el("div","sop-rule-list");ui.body.appendChild(list);
+  function draw(){
+    clear(list);
+    allSopRules().forEach(function(rule){
+      var row=el("div","template-row"),summary=el("div");summary.appendChild(el("strong",null,rule.name));
+      summary.appendChild(el("p","hint",(rule.platform||"Any platform")+" + "+(rule.format||"Any format")+" → "+leaves(sopNodes(rule)).length+" steps · "+(rule.enabled?"Enabled":"Paused")));
+      row.appendChild(summary);
+      var edit=el("button","btn btn-o","Edit");edit.setAttribute("aria-label","Edit rule "+rule.name);edit.onclick=function(){openSopRule(rule,draw)};row.appendChild(edit);
+      var toggle=el("button","text-button",rule.enabled?"Pause":"Enable");toggle.setAttribute("aria-label",(rule.enabled?"Pause":"Enable")+" rule "+rule.name);
+      toggle.onclick=function(){toggle.disabled=true;storeSopRule(Object.assign({},rule,{enabled:!rule.enabled})).then(draw).catch(function(e){toggle.disabled=false;toast(msgFor(e))})};row.appendChild(toggle);
+      if(rule.id!==DEFAULT_SOP.id){
+        var remove=el("button","text-button","Delete");remove.setAttribute("aria-label","Delete rule "+rule.name);
+        remove.onclick=function(){confirmRemoval(row,"Delete this SOP rule? Existing activities keep their steps.",function(){
+          remove.disabled=true;db.doc("sopRules/"+rule.id).delete().then(function(){S.sopRules=S.sopRules.filter(function(r){return r.id!==rule.id});draw();render();toast("SOP rule deleted")}).catch(function(e){remove.disabled=false;toast(msgFor(e))});
+        })};row.appendChild(remove);
+      }list.appendChild(row);
+    });
+  }
+  var add=el("button","btn btn-p sp","New rule");add.onclick=function(){openSopRule(null,draw)};ui.foot.appendChild(add);draw();overlay(ui.node,null,true);
+}
+function openSopRule(rule,onSaved){
+  var ui=actionDialog(rule?"Edit SOP rule":"New SOP rule","Choose when this rule runs and which steps it adds. To use your own SOP, first save an activity checklist as a reusable group.");
+  var name=input("text",rule?rule.name:"","e.g. YouTube long form production"),platform=dropdown(PLATFORMS.map(function(p){return[p[0],p[0]]}),rule?rule.platform:"","Any platform"),
+    format=formatSelect(rule?rule.format:"","Any format"),source=el("select"),preview=el("p","hint");
+  ui.body.appendChild(field("Rule name *",name));ui.body.appendChild(field("Platform",platform));ui.body.appendChild(field("Format",format));
+  function sources(){
+    var previous=source.value;clear(source);
+    if(rule&&rule.nodes){var current=el("option",null,"Keep current SOP checklist");current.value="current";source.appendChild(current)}
+    var suggested=el("option",null,"Suggested checklist"+(format.value?" for "+format.value.toLowerCase():" (choose a format)"));suggested.value="suggested";source.appendChild(suggested);
+    S.templates.forEach(function(t){var op=el("option",null,t.name);op.value=t.id;source.appendChild(op)});
+    source.value=previous||((rule&&rule.nodes)?"current":"suggested");
+  }
+  function selection(){
+    if(source.value==="current")return {nodes:rule.nodes,anchorDate:rule.anchorDate||""};
+    if(source.value==="suggested")return {nodes:buildSteps(STEPS[format.value]||["Script","Edit","Review"]),anchorDate:""};
+    return S.templates.find(function(t){return t.id===source.value});
+  }
+  sources();ui.body.appendChild(field("Checklist to add *",source,"Saved groups are copied into the rule. Updating or deleting the original group leaves this SOP intact."));ui.body.appendChild(preview);
+  var save=el("button","btn btn-p sp","Save rule");
+  function draft(){return {name:name.value,platform:platform.value,format:format.value,source:source.value}}
+  var original=JSON.stringify(draft());
+  function validate(){
+    var selected=selection(),valid=!!name.value.trim()&&!!(platform.value||format.value)&&!!selected&&!!selected.nodes.length&&
+      (source.value!=="suggested"||!!format.value)&&treeDepth(selected.nodes)<=MAXDEPTH;
+    save.disabled=!valid||!S.sopReady;
+    preview.textContent=!(platform.value||format.value)?"Choose at least a platform or format.":source.value==="suggested"&&!format.value?"Choose a format to use its suggested checklist.":selected?
+      leaves(selected.nodes).length+" steps: "+selected.nodes.map(function(n){return n.title}).join(" · "):"Choose a saved group.";
+  }
+  name.oninput=validate;platform.onchange=validate;source.onchange=validate;format.onchange=function(){sources();validate()};
+  save.onclick=function(){
+    validate();if(save.disabled)return;
+    var selected=selection(),payload={name:name.value.trim(),platform:platform.value,format:format.value,enabled:rule?rule.enabled:true,
+      nodes:copyNodes(selected.nodes),anchorDate:selected.anchorDate||"",createdAt:rule&&rule.createdAt||new Date().toISOString()};
+    if(rule)payload.id=rule.id;
+    runDialogSave(ui,save,function(){return storeSopRule(payload)},function(){onSaved();toast("SOP rule saved")});
+  };
+  ui.foot.appendChild(save);validate();overlay(ui.node,function(){return JSON.stringify(draft())!==original},true);
+}
+
 /* One creative, several placements. Each placement is a different design,
    so each becomes its own item with its own owner and date. */
 function placementPicker(node,onAdd,onCancel){
@@ -1111,7 +1228,12 @@ function quickAdd(c){
   tm.value=la.time||"";
   var go=el("button","btn btn-p q-go","Add");
   go.disabled=true;
-  ti.oninput=function(){go.disabled=!ti.value.trim()};
+  ti.oninput=function(){go.disabled=!ti.value.trim()||!S.sopReady};
+  var sopHint=el("p","hint quick-sop");
+  function drawQuickSop(){
+    var f=formatById(fs.value),matches=sopMatches({type:fs.value,platforms:f?f.platforms:[]});
+    sopHint.hidden=!matches.length;sopHint.textContent="Automatic SOP: "+matches.map(function(r){return r.name}).join(", ");
+  }
   function drawAngle(keep){
     clear(angleBox);
     var f=formatById(fs.value);
@@ -1120,18 +1242,19 @@ function quickAdd(c){
     s.setAttribute("aria-label","Topic");
     angleBox.appendChild(s);
   }
-  fs.onchange=function(){drawAngle(false)};
-  drawAngle(true);
+  fs.onchange=function(){drawAngle(false);drawQuickSop()};
+  drawAngle(true);drawQuickSop();
   function add(){
     var t=ti.value.trim();if(!t||go.disabled)return;
     var f=formatById(fs.value),asel=angleBox.querySelector("select");
     var ang=asel?asel.value:"";
     S.lastAdd[c.id]={type:fs.value,angle:ang,date:dt.value,time:tm.value};
     go.disabled=true;go.textContent="…";
-    db.collection("activities").add({campaignId:c.id,title:t,type:fs.value,angle:ang,cta:"",
+    var payload=applySopRules({campaignId:c.id,title:t,type:fs.value,angle:ang,cta:"",
       platforms:f?f.platforms.slice():[],
       dueDate:dt.value||TODAY,dueTime:tm.value,owner:"",status:"Not started",description:"",
-      keywords:[],script:"",subtasks:[],createdAt:new Date().toISOString()})
+      keywords:[],script:"",subtasks:[],createdAt:new Date().toISOString()});
+    db.collection("activities").add(payload)
       .then(function(){S.focusAdd="c"+c.id;render();toast("Added to "+c.name)})
       .catch(function(e){go.disabled=false;go.textContent="Add";toast(msgFor(e))});
   }
@@ -1157,6 +1280,7 @@ function quickAdd(c){
     });
   };
   row2.appendChild(more);
+  row2.appendChild(sopHint);
   return box;
 }
 
@@ -1562,6 +1686,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
     }
     drawAngle();drawCta();
     if(templateHint)templateHint.textContent=templateDescription();
+    if(sopPreview)drawSopPreview();
   };
   drawAngle();drawCta();
 
@@ -1574,6 +1699,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
       if(i>=0)d.platforms.splice(i,1);else d.platforms.push(x[0]);
       autoPlat=false;
       b.setAttribute("aria-pressed",d.platforms.indexOf(x[0])>=0);
+      if(sopPreview)drawSopPreview();
     };
     pl.appendChild(b);
   });
@@ -1782,6 +1908,24 @@ function openActivity(a,presetDate,presetCampaign,preset){
     addSaved.onclick=function(){openTemplatePicker({dueDate:d.templateAnchor},null,0,function(nodes){d.templateNodes=d.templateNodes.concat(nodes);drawSaved()})};
     checklist.body.appendChild(addSaved);checklist.body.appendChild(savedList);
   }
+  var sopPreview=el("div","sop-preview");checklist.body.prepend(sopPreview);
+  function drawSopPreview(){
+    clear(sopPreview);
+    var current=isNew?null:S.activities.find(function(x){return x.id===a.id})||a;
+    var matches=sopMatches(d).filter(function(rule){return !current||(current.appliedSopRules||[]).indexOf(rule.id)<0});
+    sopPreview.hidden=!matches.length;
+    if(matches.length){
+      sopPreview.appendChild(el("strong",null,isNew?"Added automatically by SOP rules":"SOP steps will be added when you save"));
+      matches.forEach(function(rule){
+        sopPreview.appendChild(el("p",null,rule.name));
+        function steps(nodes){var list=el("ul","sop-steps");nodes.forEach(function(n){var item=el("li",null,n.title);if(kids(n).length)item.appendChild(steps(kids(n)));list.appendChild(item)});return list}
+        sopPreview.appendChild(steps(sopNodes(rule)));
+      });
+      sopPreview.appendChild(el("p","hint","Existing steps are kept. Matching steps are reused to avoid duplicates."));
+      if(isNew)checklist.node.open=true;
+    }
+  }
+  drawSopPreview();
   body.appendChild(scriptSection.node);
   function templateDescription(){return (STEPS[d.type]||["Script","Edit","Review"]).map(function(s){return typeof s==="string"?s:s.t}).join(" · ")}
 
@@ -1823,11 +1967,12 @@ function openActivity(a,presetDate,presetCampaign,preset){
     err.hidden=false;err.textContent=msgFor(e);validate();save.textContent=isNew?"Create activity":"Save changes";
   }
   function validate(){
-    var ok=d.title.trim()&&d.campaignId&&d.dueDate&&(!repeatOptions||repeatOptions.valid());
+    var ok=d.title.trim()&&d.campaignId&&d.dueDate&&S.sopReady&&(!repeatOptions||repeatOptions.valid());
     save.disabled=saving||!ok||!writable();
     var missing=[];if(!d.title.trim())missing.push("a title");if(!d.campaignId)missing.push("a campaign");if(!d.dueDate)missing.push("a due date");
     requiredNote.textContent=ok?(isNew?"Optional details can be added later.":"Save changes to update the details above."):"Add "+missing.join(", ")+" to continue.";
     if(repeatOptions&&!repeatOptions.valid())requiredNote.textContent="Choose 2 to 52 total occurrences.";
+    if(!S.sopReady)requiredNote.textContent="Loading SOP rules before saving…";
     var c=campById(d.campaignId);
     if(c&&d.dueDate&&(d.dueDate<c.startDate||d.dueDate>c.endDate)){
       rangeHint.hidden=false;
@@ -1846,10 +1991,11 @@ function openActivity(a,presetDate,presetCampaign,preset){
     if(isNew){
       payload.status="Not started";payload.assets={};payload.subtasks=(d.useTemplate?buildSteps(STEPS[d.type]||["Script","Edit","Review"]):[]).concat(copyNodes(d.templateNodes,daysBetween(d.templateAnchor,d.dueDate)));
       payload.createdAt=new Date().toISOString();
+      payload=applySopRules(payload);
       writeActivityCopies(payload,d.repeat).then(function(){closeOverlay(true);toast(d.repeat.unit?d.repeat.count+" recurring activities created":"Activity added to "+fmtLong(d.dueDate))})
         .catch(showErr);
     }else{
-      db.doc("activities/"+a.id).update(payload).then(function(){closeOverlay(true);toast("Changes saved")}).catch(showErr);
+      saveActivityWithSops(a.id,payload).then(function(){closeOverlay(true);toast("Changes saved")}).catch(showErr);
     }
   }
   validate();
@@ -2051,9 +2197,9 @@ function showGate(kind,extra){
 
 function startData(){
   subs.forEach(function(f){try{f()}catch(e){}});subs=[];
-  S.loading=true;S.err=null;pending=3;render();
+  S.loading=true;S.err=null;S.sopReady=false;S.sopRules=[];pending=4;render();
   S.templates=[];S.templatesLoading=true;S.templateError="";
-  var waiting={campaigns:true,activities:true,users:true};
+  var waiting={campaigns:true,activities:true,users:true,sopRules:true};
   function received(key,snap){
     if(waiting[key]&&(!snap||!snap.metadata.fromCache)){
       waiting[key]=false;settled();
@@ -2074,6 +2220,10 @@ function startData(){
   subs.push(db.collection("activities").onSnapshot({includeMetadataChanges:true},function(snap){
     S.activities=snap.docs.map(function(d){var o=Object.assign({},d.data());o.id=d.id;return o});
     received("activities",snap);render();
+  },onErr));
+  subs.push(db.collection("sopRules").onSnapshot({includeMetadataChanges:true},function(snap){
+    S.sopRules=snap.docs.map(function(d){return Object.assign({},d.data(),{id:d.id})});S.sopReady=true;
+    received("sopRules",snap);render();
   },onErr));
   subs.push(db.collection("subtaskTemplates").onSnapshot(function(snap){
     S.templates=snap.docs.map(function(d){return Object.assign({},d.data(),{id:d.id})});
@@ -2144,7 +2294,7 @@ document.addEventListener("click",function(e){if(!e.target.closest(".account"))c
   auth.onAuthStateChanged(function(u){
     if(!u){
       subs.forEach(function(f){try{f()}catch(e){}});subs=[];
-      S.me=null;S.campaigns=[];S.activities=[];S.team=[];S.templates=[];S.templateError="";S.templatesLoading=true;S.loading=true;
+      S.me=null;S.campaigns=[];S.activities=[];S.team=[];S.templates=[];S.templateError="";S.templatesLoading=true;S.sopRules=[];S.sopReady=false;S.loading=true;
       render();showGate("signin");return;
     }
     if(!emailAllowed(u.email)){S.me=null;render();showGate("denied",u.email);return;}

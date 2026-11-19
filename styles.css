@@ -455,6 +455,12 @@ button:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid var
 .template-row>div:first-child,.template-row>span:first-child{flex:1 1 160px;min-width:0;overflow-wrap:anywhere}
 .template-row .btn{font-size:11px;padding:8px 12px}
 .repeat-detail{display:flex;flex-direction:column;gap:10px}
+.sop-preview{padding:12px 14px;background:var(--sky-soft);border:1px solid var(--line);border-radius:9px;font-size:12px;line-height:1.7}
+.sop-preview p{margin-top:6px}.sop-preview strong{font-weight:600}
+.sop-rule-list{display:flex;flex-direction:column;gap:12px}
+.quick-sop{flex-basis:100%;margin:0;padding:5px 0}
+.sop-manage{flex:none}
+.sop-steps{padding-left:18px;margin:6px 0}.sop-steps li{padding:2px 0}
 @media (hover:none){.sub-x,.card .top .x,.cell .add{opacity:1}select.inl.empty{opacity:1;max-width:96px;padding:3px 8px}.mark,.sub-chk{min-width:28px;min-height:28px}}
 @media (max-width:600px){
   .subtask-modal .f2{grid-template-columns:1fr}
