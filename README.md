@@ -21,12 +21,12 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
 - Create a campaign with its name and dates, then add the first activity in the
   expanded campaign. Goal, owner and status are available under Campaign details.
 - Activities start with a title, campaign and due date. Content details, a
-  suggested checklist and a script are available in expandable sections.
+  SOP suggestions and a script are available in expandable sections.
 - Activity details use **Save changes**. Status and checklist edits save
   immediately. Closing a changed form offers **Keep editing** or **Discard
   changes**; refreshing the page also warns about an unfinished form.
 - Search covers campaign names, content titles, formats, topics, notes and
-  keywords. Campaign filters apply to campaign status and owner; calendar
+  keywords, plus nested subtask names and descriptions. Campaign filters apply to campaign status and owner; calendar
   filters apply to activities. Empty results offer a clear reset action.
 - Checklist removal asks for confirmation. Clearing an item's title does not
   delete it. Campaign and activity deletion also require an explicit choice.
@@ -37,13 +37,31 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
 - Every displayed subtask shows its deadline, or **Set deadline** when no date
   has been assigned. Select the deadline to edit it; overdue deadlines are
   highlighted until the item is complete.
-- Use **Save checklist as reusable group**, or a subtask's **⋯ → Save as
-  reusable group**, to save your own steps. **Add saved group** inserts them
-  into an existing or new activity; **Add saved group inside** inserts them
-  beneath a subtask when the three-level nesting limit allows it. Saved groups
-  are shared with the team. Deleting a saved group leaves existing checklists
-  intact. Owners, descriptions, platforms and types are kept; deadlines shift
-  relative to the destination activity's due date and completion resets.
+- **SOP library** is the single place to create and reuse checklists. Every SOP
+  has a unique name, platform, content format, optional topic/category, and an
+  editable checklist with up to three levels. Add steps directly, use suggested
+  steps, or start from an existing activity checklist. The source list shows the
+  activity's date and campaign so repeated activities are distinguishable.
+- Names are compared without case differences, Unicode presentation differences,
+  or repeated/leading/trailing spaces. Saves reserve the normalized name in a
+  Firestore transaction so concurrent saves cannot claim the same name. Renaming
+  or deleting releases the old name. Existing duplicate groups remain visible as
+  **duplicate 1**, **duplicate 2**, etc., with a warning and checklist preview;
+  editing requires a unique name. Existing groups are configured in place as SOPs.
+- Matching a platform → format → topic offers **Found an SOP for these
+  conditions — Add N subtasks**. Adding is opt-in. No steps are inserted merely
+  by choosing a format or saving an activity. Topic-specific matches appear first.
+  The nudge's count excludes steps already present. Selected steps are added
+  when the activity/subtask is saved. Quick Add supports the same choice.
+- New inline subtasks inherit conditions from their parent and offer matching
+  SOPs immediately. **Subtask details → SOP conditions** lets you override
+  platform, content format and topic. Work type (Script, Thumbnail, Edit, etc.)
+  is a separate field. Nudges respect the three-level nesting limit.
+- **Browse SOPs** manually inserts a checklist even when its conditions do not
+  match. Owners and instructions are retained, deadlines shift relative to the
+  destination date, progress resets, and existing steps/completion are preserved.
+  Each SOP is applied at most once per target. Editing or deleting an SOP leaves
+  existing activity checklists intact. Library deletion archives the definition.
 - **Duplicate** on a campaign copies all its activities and nested subtasks.
   Activity details offer **Duplicate activity**, and every subtask's **⋯** menu
   offers **Duplicate**, including groups and the deepest nested items. Copies
@@ -57,18 +75,6 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   this is a finite series, with no background scheduler or series-wide edits.
   Monthly repeats preserve the original day where possible and use the last
   day in shorter months. Campaign duplication is atomic, with up to 499 activities.
-- **SOP rules** beside the workspace heading automatically attach checklists
-  based on platform and format. A starter **YouTube + Long form** rule uses the
-  suggested production checklist. Edit it to select your own saved group, or
-  create rules for other formats/platforms. Either condition can be Any, with at
-  least one specific condition required. Rules can be paused and enabled.
-- Matching steps are previewed in new activity forms, and applied on creation,
-  including Quick Add and every occurrence in a new recurring series. Saving an
-  existing activity also applies any matching rule that hasn't run on it before.
-  Existing steps and completion are preserved; matching titles and platforms are
-  merged to avoid duplicates. Each rule runs once per activity. Editing, pausing
-  or deleting a rule leaves already-added steps intact. Copies retain the source
-  checklist and rule history. A rule stores its own snapshot of a saved group.
 - Form labels, dialog focus, view-tab keyboard navigation and visible focus
   indicators support keyboard use. Optional fields are identified in the forms.
 
@@ -127,15 +133,20 @@ Collections:
   dueDate, dueTime, owner, status, description, keywords[], script,
   subtasks[] (nested, each with platform, kind, owner, due, children[])
 - `users/{uid}` — written on sign-in so owner pickers show real names
-- `subtaskTemplates/{id}` — shared reusable groups: name, nodes[], anchorDate,
-  createdAt. Publish the updated `firestore.rules` to enable this collection
-  before using saved groups. Existing task and campaign operations continue
-  to work if template permissions have not yet been published.
-- `sopRules/{id}` — automatic checklist rules: name, platform, format, enabled,
-  nodes[], anchorDate, createdAt. Activities record applied rule IDs in
-  `appliedSopRules[]`. Publish the updated Firestore rules before deploying SOP
-  code; the app waits for rule configuration before allowing activity creation.
-  Existing activity details and new SOP steps are saved in a transaction.
+- `subtaskTemplates/{id}` — legacy saved groups. They appear in the SOP library;
+  editing one writes an SOP and stores its ID in `sopId`. New group creation is
+  disabled by the rules. Existing data remains readable.
+- `sopRules/{id}` — name, nameKey, platform, format, angle, enabled, nodes[],
+  anchorDate, createdAt, optional archived. A starter YouTube + Long form SOP is
+  offered until it is configured or paused. It follows the same opt-in behavior.
+- `sopNameClaims/{nameKey}` — atomic name reservations, storing sopId and name.
+  The key is a prefixed URI-encoded normalized SOP name. New/renamed SOP writes
+  must include a matching reservation in the same transaction, enforced through
+  getAfter in Firestore rules. Publish the updated rules before the UI deployment.
+
+Activities and individual subtask nodes record `appliedSopRules[]`. Activity
+metadata and explicitly selected SOP steps are saved in a transaction. Repeated
+activities keep the selected checklists and their application history.
 
 Repeated activities also carry `repeat` metadata with a series ID, frequency,
 occurrence index and count. Duplicating an activity starts an independent copy.

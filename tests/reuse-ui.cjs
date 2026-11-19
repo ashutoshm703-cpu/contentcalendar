@@ -1,221 +1,74 @@
-/* Browser smoke test with an in-memory database; never connects to Firebase.
-   Run with playwright available on NODE_PATH: node tests/reuse-ui.cjs */
-const { chromium } = require('playwright');
-const fs = require('node:fs');
-const path = require('node:path');
-const http = require('node:http');
-const assert = require('node:assert/strict');
-const root = path.join(__dirname, '..');
-const source = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
-const seed = `
-  S.loading=false;S.canWrite=true;S.templatesLoading=false;S.sopReady=true;S.me={id:'owner',name:'Test owner'};
-  S.team=[{id:'owner',name:'Test owner'}];S.profiles={owner:{name:'Test owner'}};U=makeUser();
-  S.campaigns=[{id:'c1',name:'Live campaign',goal:'Teach',startDate:'2026-11-01',endDate:'2026-11-30',owner:'owner',status:'Live',colour:'#131B63',createdAt:'2026-11-01'}];
-  S.activities=[{id:'a1',campaignId:'c1',title:'YouTube live',type:'Live',dueDate:'2026-11-19',dueTime:'18:00',status:'Published',owner:'owner',script:'Live script',assets:{url:'old'},subtasks:[
-    {id:'g1',title:'Pre class',done:true,description:'Preparation',due:'2026-11-18',owner:'owner',children:[
-      {id:'s1',title:'Thumbnail',done:true,kind:'Thumbnail',platform:'YouTube',due:'2026-11-18',children:[]},
-      {id:'g2',title:'Reminders',done:true,due:'',children:[{id:'s2',title:'WhatsApp reminder',done:true,due:'2026-11-19',children:[]}]}
-    ]}
-  ]}];
-  let nextId=0;window.fixture={S,failNext:false};
-  function list(collection){return collection==='campaigns'?S.campaigns:collection==='activities'?S.activities:collection==='sopRules'?S.sopRules:S.templates}
-  function apply(ref,data,remove){
-    const parts=ref.path.split('/'),rows=list(parts[0]),i=rows.findIndex(r=>r.id===parts[1]);
-    if(remove){if(i>=0)rows.splice(i,1)}else if(i>=0)rows[i]=Object.assign({},rows[i],data);else rows.push(Object.assign({},data,{id:parts[1]}));
-  }
-  function commit(writes){
-    if(window.fixture.failNext){window.fixture.failNext=false;return Promise.reject({code:'permission-denied'})}
-    writes.forEach(w=>apply(w.ref,JSON.parse(JSON.stringify(w.data||{})),w.remove));render();return Promise.resolve();
-  }
-  function ref(p){return {id:p.split('/')[1],path:p,set(data){return commit([{ref:this,data}])},update(data){return commit([{ref:this,data}])},delete(){return commit([{ref:this,remove:true}])}}}
-  db={collection(name){return {doc(id){return ref(name+'/'+(id||'fixture'+(++nextId)))},add(data){const r=this.doc();return commit([{ref:r,data}]).then(()=>r)}}},
-    doc:ref,batch(){const writes=[];return {set(ref,data){writes.push({ref,data})},commit(){return commit(writes)}}},
-    async runTransaction(fn){const writes=[];await fn({async get(ref){const parts=ref.path.split('/'),data=list(parts[0]).find(r=>r.id===parts[1]);return {exists:!!data,data(){return data}}},update(ref,data){writes.push({ref,data})}});return commit(writes)}};
-  S.view='campaigns';S.expanded={cc1:true,aa1:true};render();
+/* End-to-end product flow checks. Uses a local fixture, never production data. */
+const {chromium}=require('playwright');
+const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
+const root=path.join(__dirname,'..'),source=fs.readFileSync(path.join(root,'app.js'),'utf8');
+const seed=`
+S.loading=false;S.canWrite=true;S.templatesLoading=false;S.sopReady=true;S.me={id:'owner',name:'Test owner'};S.team=[{id:'owner',name:'Test owner'}];S.profiles={owner:{name:'Test owner'}};U=makeUser();
+S.campaigns=[{id:'c1',name:'Live campaign',goal:'Teach',startDate:'2026-11-01',endDate:'2026-11-30',owner:'owner',status:'Live',colour:'#131B63',createdAt:'2026-11-01'}];
+S.activities=[{id:'a1',campaignId:'c1',title:'YouTube live',type:'Live',platforms:['YouTube'],angle:'Academic discussion',dueDate:'2026-11-19',dueTime:'18:00',status:'Published',owner:'owner',script:'Live script',assets:{url:'old'},subtasks:[{id:'g1',title:'Pre class',done:true,description:'Preparation',due:'2026-11-18',owner:'owner',children:[{id:'s1',title:'Thumbnail',done:true,kind:'Thumbnail',platform:'YouTube',due:'2026-11-18',children:[]},{id:'g2',title:'Reminders',done:true,due:'',children:[{id:'s2',title:'WhatsApp reminder',done:true,due:'2026-11-19',children:[]}]}]}]}];
+S.templates=[{id:'old1',name:'Launch checklist',anchorDate:'2026-11-19',nodes:[newNode('Prepare'),newNode('Publish')]},{id:'old2',name:'Launch checklist',anchorDate:'2026-11-19',nodes:[newNode('Review')]}];
+let nextId=0;window.fixture={S,failNext:false,claims:[]};
+function list(name){return name==='campaigns'?S.campaigns:name==='activities'?S.activities:name==='sopRules'?S.sopRules:name==='sopNameClaims'?fixture.claims:S.templates}
+function ref(p){return {id:p.split('/')[1],path:p,set(data){return commit([{ref:this,data}])},update(data){return commit([{ref:this,data}])},delete(){return commit([{ref:this,remove:true}])}}}
+function commit(writes){if(fixture.failNext){fixture.failNext=false;return Promise.reject({code:'permission-denied'})}writes.forEach(w=>{const [name,id]=w.ref.path.split('/'),rows=list(name),i=rows.findIndex(r=>r.id===id);if(w.remove){if(i>=0)rows.splice(i,1)}else{const row=Object.assign({},i>=0?rows[i]:{},JSON.parse(JSON.stringify(w.data)),{id});if(i>=0)rows[i]=row;else rows.push(row)}});render();return Promise.resolve()}
+let transactions=Promise.resolve();
+db={doc:ref,collection(name){return {doc(id){return ref(name+'/'+(id||'fixture'+(++nextId)))},add(data){const r=this.doc();return commit([{ref:r,data}]).then(()=>r)}}},batch(){const writes=[];return {set(ref,data){writes.push({ref,data})},commit(){return commit(writes)}}},runTransaction(fn){const work=transactions.then(async()=>{const writes=[];const result=await fn({async get(ref){const [name,id]=ref.path.split('/'),row=list(name).find(r=>r.id===id),data=row?JSON.parse(JSON.stringify(row)):null;return {exists:!!row,data(){return data}}},set(ref,data){writes.push({ref,data})},update(ref,data){writes.push({ref,data})},delete(ref){writes.push({ref,remove:true})}});await commit(writes);return result});transactions=work.catch(()=>{});return work}};
+S.view='campaigns';S.expanded={cc1:true,aa1:true};render();
 })();`;
-const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
-  .replace(/<script[^>]*src="[^\"]*"[^>]*><\/script>/g, '')
-  .replace('</body>', '<script src="/fixture-app.js"></script></body>');
-const server = http.createServer((req,res)=>{
-  if(req.url==='/fixture-app.js'){res.setHeader('Content-Type','text/javascript');return res.end(source.slice(0,source.indexOf('(function boot(){'))+seed)}
-  if(req.url==='/styles.css'){res.setHeader('Content-Type','text/css');return res.end(fs.readFileSync(path.join(root,'styles.css')))}
-  res.setHeader('Content-Type','text/html');res.end(html);
-});
-let browser;
-const errors=[];
-async function state(page){return page.evaluate(()=>JSON.parse(JSON.stringify(fixture.S)))}
-async function waitFor(page,fn){await page.waitForFunction(fn)}
+const html=fs.readFileSync(path.join(root,'index.html'),'utf8').replace(/<script[^>]*src="[^"]*"[^>]*><\/script>/g,'').replace('</body>','<script src="/fixture-app.js"></script></body>');
+const server=http.createServer((req,res)=>{if(req.url==='/fixture-app.js'){res.setHeader('Content-Type','text/javascript');return res.end(source.slice(0,source.indexOf('(function boot(){'))+seed)}if(req.url==='/styles.css'){res.setHeader('Content-Type','text/css');return res.end(fs.readFileSync(path.join(root,'styles.css')))}res.setHeader('Content-Type','text/html');res.end(html)});
+let browser;const errors=[];
+const state=p=>p.evaluate(()=>JSON.parse(JSON.stringify(fixture.S)));
+const wait=(p,fn)=>p.waitForFunction(fn);
+const sopCard=(scope,name)=>scope.locator('.sop-match').filter({hasText:name});
 (async()=>{
-  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-  browser=await chromium.launch({channel:'chrome',headless:true});
-  const page=await browser.newPage({viewport:{width:1280,height:1000}});
-  page.setDefaultTimeout(10000);
-  page.on('pageerror',e=>errors.push(e.message));
-  await page.route('**/*',route=>route.request().url().startsWith('http://127.0.0.1:')?route.continue():route.abort());
-  await page.goto('http://127.0.0.1:'+server.address().port);
-  await page.getByRole('button',{name:'Duplicate Live campaign',exact:true}).click();
-  let dialog=page.getByRole('dialog',{name:'Duplicate campaign',exact:true});
-  await dialog.getByLabel('Start date *',{exact:true}).fill('2026-12-01');
-  await dialog.getByRole('button',{name:'Duplicate',exact:true}).click();
-  await waitFor(page,()=>fixture.S.campaigns.length===2);
-  let s=await state(page),campaign=s.campaigns.find(c=>c.id!=='c1'),activity=s.activities.find(a=>a.campaignId===campaign.id);
-  assert.equal(campaign.status,'Planning');assert.equal(campaign.endDate,'2026-12-30');
-  assert.equal(activity.dueDate,'2026-12-19');assert.equal(activity.subtasks[0].due,'2026-12-18');assert.equal(activity.status,'Not started');
-  assert.notEqual(activity.subtasks[0].id,'g1');
-  await page.getByRole('button',{name:'Duplicate activity YouTube live',exact:true}).click();
-  dialog=page.getByRole('dialog',{name:'Duplicate activity',exact:true});
-  await dialog.getByLabel('First due date *',{exact:true}).fill('2026-11-26');
-  await dialog.getByRole('button',{name:'Duplicate',exact:true}).click();
-  await waitFor(page,()=>fixture.S.activities.length===3);
-  s=await state(page);activity=s.activities.find(a=>a.title==='YouTube live (copy)');
-  assert.equal(activity.subtasks[0].children[0].due,'2026-11-25');assert.equal(activity.subtasks[0].children[0].done,false);
-  await page.getByLabel('Actions for WhatsApp reminder',{exact:true}).click();
-  await page.locator('.reuse-menu[open]').getByRole('button',{name:'Duplicate',exact:true}).click();
-  await waitFor(page,()=>fixture.S.activities[0].subtasks[0].children[1].children.length===2);
-  s=await state(page);assert.equal(s.activities[0].subtasks[0].children[1].children[1].done,false);
-  await page.getByLabel('Actions for Pre class',{exact:true}).click();
-  await page.locator('.reuse-menu[open]').getByRole('button',{name:'Save as reusable group',exact:true}).click();
-  dialog=page.getByRole('dialog',{name:'Save reusable group',exact:true});
-  await dialog.getByLabel('Group name *',{exact:true}).fill('YouTube live setup');
-  await dialog.getByRole('button',{name:'Save group',exact:true}).click();
-  await waitFor(page,()=>fixture.S.templates.length===1);
-  await page.getByRole('button',{name:'+ Add saved group',exact:true}).click();
-  dialog=page.getByRole('dialog',{name:'Add saved group',exact:true});
-  await dialog.getByRole('button',{name:'Add group',exact:true}).click();
-  await waitFor(page,()=>fixture.S.activities[0].subtasks.length===2);
-  s=await state(page);assert.notEqual(s.activities[0].subtasks[0].id,s.activities[0].subtasks[1].id);
-  assert.equal(s.activities[0].subtasks[1].done,false);
-  // Whole groups duplicate at the same level and nested insertion respects the depth limit.
-  await page.getByLabel('Actions for Pre class',{exact:true}).first().click();
-  await page.locator('.reuse-menu[open]').getByRole('button',{name:'Duplicate',exact:true}).click();
-  await waitFor(page,()=>fixture.S.activities[0].subtasks.length===3);
-  assert.equal((await state(page)).activities[0].subtasks[1].title,'Pre class (copy)');
-  await page.getByLabel('Actions for Pre class',{exact:true}).first().click();
-  await page.locator('.reuse-menu[open]').getByRole('button',{name:'Add saved group inside',exact:true}).click();
-  dialog=page.getByRole('dialog',{name:'Add saved group',exact:true});
-  assert.equal(await dialog.getByRole('button',{name:'Add group',exact:true}).isDisabled(),true);
-  await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
-  // New activity: reuse a group, change the date, then create three weekly occurrences.
-  await page.getByRole('tab',{name:'Next 7 days',exact:true}).click();
-  await page.locator('#new-act').click();
-  dialog=page.getByRole('dialog',{name:'New activity',exact:true});
-  await dialog.getByLabel('Activity title *',{exact:true}).fill('Recurring live');
-  await dialog.getByLabel('Campaign *',{exact:true}).selectOption('c1');
-  await dialog.locator('summary').filter({hasText:'Checklist'}).click();
-  await dialog.getByRole('button',{name:'+ Add saved group',exact:true}).click();
-  await page.getByRole('dialog',{name:'Add saved group',exact:true}).getByRole('button',{name:'Add group',exact:true}).click();
-  dialog=page.getByRole('dialog',{name:'New activity',exact:true});
-  await dialog.getByLabel('Due date *',{exact:true}).fill('2026-12-03');
-  await dialog.locator('summary').filter({hasText:'Repeat activity'}).click();
-  await dialog.getByLabel('Repeat',{exact:true}).selectOption('weekly');
-  await dialog.getByLabel('Total occurrences (2–52)',{exact:true}).fill('1');
-  assert.equal(await dialog.getByRole('button',{name:'Create activity',exact:true}).isDisabled(),true);
-  await dialog.getByLabel('Total occurrences (2–52)',{exact:true}).fill('3');
-  await dialog.getByRole('button',{name:'Create activity',exact:true}).click();
-  await waitFor(page,()=>fixture.S.activities.filter(a=>a.title==='Recurring live').length===3);
-  s=await state(page);const repeats=s.activities.filter(a=>a.title==='Recurring live');
-  assert.deepEqual(repeats.map(a=>a.dueDate),['2026-12-03','2026-12-10','2026-12-17']);
-  assert.deepEqual(repeats.map(a=>a.subtasks[0].due),['2026-12-02','2026-12-09','2026-12-16']);
-  // Failure is visible, retry creates exactly one campaign.
-  await page.getByRole('tab',{name:'Campaigns',exact:true}).click();
-  await page.getByRole('button',{name:'Duplicate Live campaign',exact:true}).click();
-  dialog=page.getByRole('dialog',{name:'Duplicate campaign',exact:true});
-  await page.evaluate(()=>{fixture.failNext=true});
-  await dialog.getByRole('button',{name:'Duplicate',exact:true}).click();
-  await dialog.getByText("You don't have permission to change this.",{exact:true}).waitFor();
-  assert.equal((await state(page)).campaigns.length,2);
-  await dialog.getByRole('button',{name:'Duplicate',exact:true}).click();
-  await waitFor(page,()=>fixture.S.campaigns.length===3);
-  // Mobile: open an activity and repeat from saved details while preserving draft title.
-  await page.setViewportSize({width:390,height:844});
-  await page.locator('.row-main').filter({hasText:'YouTube live'}).first().click();
-  dialog=page.getByRole('dialog',{name:'Activity',exact:true});
-  await dialog.getByLabel('Activity title *',{exact:true}).fill('Unsaved title');
-  await dialog.getByRole('button',{name:'Repeat activity',exact:true}).click();
-  let child=page.getByRole('dialog',{name:'Repeat activity',exact:true});
-  await child.getByLabel('First due date *',{exact:true}).fill('2027-01-31');
-  await child.getByLabel('Repeat',{exact:true}).selectOption('monthly');
-  await child.getByLabel('Total occurrences (2–52)',{exact:true}).fill('3');
-  await child.getByRole('button',{name:'Create repeats',exact:true}).click();
-  await dialog.waitFor();assert.equal(await dialog.getByLabel('Activity title *',{exact:true}).inputValue(),'Unsaved title');
-  s=await state(page);assert.deepEqual(s.activities.slice(-3).map(a=>a.dueDate),['2027-01-31','2027-02-28','2027-03-31']);
-  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-  fs.mkdirSync(path.join(root,'output/playwright'),{recursive:true});
-  await page.screenshot({path:path.join(root,'output/playwright/reuse-mobile.png'),animations:'disabled'});
-  await dialog.getByRole('button',{name:'Close dialog',exact:true}).click();
-  await dialog.getByRole('button',{name:'Discard changes',exact:true}).click();
-  // Turn the saved group into an SOP for YouTube long form.
-  await page.getByRole('button',{name:'SOP rules',exact:true}).click();
-  dialog=page.getByRole('dialog',{name:'SOP rules',exact:true});
-  await dialog.getByRole('button',{name:'Edit rule YouTube long form SOP',exact:true}).click();
-  child=page.getByRole('dialog',{name:'Edit SOP rule',exact:true});
-  await child.getByLabel('Rule name *',{exact:true}).fill('Long form publishing SOP');
-  const templateId=(await state(page)).templates[0].id;
-  await child.getByLabel('Checklist to add *',{exact:true}).selectOption(templateId);
-  await child.getByRole('button',{name:'Save rule',exact:true}).click();
-  await dialog.waitFor();
-  assert.equal((await state(page)).sopRules[0].name,'Long form publishing SOP');
-  await dialog.getByRole('button',{name:'New rule',exact:true}).click();
-  child=page.getByRole('dialog',{name:'New SOP rule',exact:true});
-  await child.getByLabel('Rule name *',{exact:true}).fill('Reel publishing SOP');
-  assert.equal(await child.getByRole('button',{name:'Save rule',exact:true}).isDisabled(),true);
-  await child.getByLabel('Platform',{exact:true}).selectOption('Instagram');
-  await child.getByLabel('Format',{exact:true}).selectOption('Reel');
-  await child.getByLabel('Checklist to add *',{exact:true}).selectOption(templateId);
-  await child.getByRole('button',{name:'Save rule',exact:true}).click();
-  await dialog.waitFor();
-  assert.equal((await state(page)).sopRules.length,2);
-  await dialog.getByRole('button',{name:'Done',exact:true}).click();
-  await page.getByRole('tab',{name:'Next 7 days',exact:true}).click();
-  await page.locator('#new-act').click();
-  dialog=page.getByRole('dialog',{name:'New activity',exact:true});
-  await dialog.getByLabel('Activity title *',{exact:true}).fill('SOP create');
-  await dialog.getByLabel('Campaign *',{exact:true}).selectOption('c1');
-  await dialog.getByLabel('Format',{exact:true}).selectOption('Long form');
-  await dialog.getByText('Added automatically by SOP rules',{exact:true}).waitFor();
-  await dialog.getByText('Long form publishing SOP',{exact:true}).waitFor();
-  assert.equal(await dialog.getByText('Reel publishing SOP',{exact:true}).count(),0);
-  await dialog.getByLabel('Due date *',{exact:true}).fill('2026-12-03');
-  await dialog.getByRole('button',{name:'Create activity',exact:true}).click();
-  await waitFor(page,()=>fixture.S.activities.some(a=>a.title==='SOP create'));
-  s=await state(page);activity=s.activities.find(a=>a.title==='SOP create');
-  assert.equal(activity.subtasks.length,1);assert.equal(activity.subtasks[0].due,'2026-12-02');
-  assert.deepEqual(activity.appliedSopRules,['builtin-youtube-long-form']);
-  // Quick Add uses the same rule engine; saving an existing match keeps one checklist.
-  await page.getByRole('tab',{name:'Campaigns',exact:true}).click();
-  const quick=page.locator('.qadd').filter({has:page.getByLabel('Activity title for Live campaign',{exact:true})});
-  await quick.getByLabel('Activity title for Live campaign',{exact:true}).fill('Quick SOP');
-  await quick.getByLabel('Activity format',{exact:true}).selectOption('Long form');
-  await quick.getByRole('button',{name:'Add',exact:true}).click();
-  await waitFor(page,()=>fixture.S.activities.some(a=>a.title==='Quick SOP'));
-  assert.equal((await state(page)).activities.find(a=>a.title==='Quick SOP').subtasks.length,1);
-  await page.locator('.row-main').filter({hasText:'SOP create'}).click();
-  dialog=page.getByRole('dialog',{name:'Activity',exact:true});
-  await dialog.getByRole('button',{name:'Save changes',exact:true}).click();
-  await waitFor(page,()=>!document.querySelector('[role="dialog"]'));
-  assert.equal((await state(page)).activities.find(a=>a.title==='SOP create').subtasks.length,1);
-  await page.getByRole('button',{name:'SOP rules',exact:true}).click();
-  dialog=page.getByRole('dialog',{name:'SOP rules',exact:true});
-  await dialog.getByRole('button',{name:'Pause rule Long form publishing SOP',exact:true}).click();
-  await dialog.getByRole('button',{name:'Enable rule Long form publishing SOP',exact:true}).waitFor();
-  await dialog.getByRole('button',{name:'Done',exact:true}).click();
-  await quick.getByLabel('Activity title for Live campaign',{exact:true}).fill('Paused SOP');
-  await quick.getByLabel('Activity format',{exact:true}).selectOption('Long form');
-  await quick.getByRole('button',{name:'Add',exact:true}).click();
-  await waitFor(page,()=>fixture.S.activities.some(a=>a.title==='Paused SOP'));
-  assert.equal((await state(page)).activities.find(a=>a.title==='Paused SOP').subtasks.length,0);
-  await page.getByRole('button',{name:'SOP rules',exact:true}).click();
-  dialog=page.getByRole('dialog',{name:'SOP rules',exact:true});
-  await dialog.getByRole('button',{name:'Enable rule Long form publishing SOP',exact:true}).click();
-  await dialog.getByRole('button',{name:'Pause rule Long form publishing SOP',exact:true}).waitFor();
-  fs.mkdirSync(path.join(root,'output/playwright'),{recursive:true});
-  await page.screenshot({path:path.join(root,'output/playwright/sop-rules-mobile.png'),animations:'disabled'});
-  await dialog.getByRole('button',{name:'Done',exact:true}).click();
-  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-  await page.screenshot({path:path.join(root,'output/playwright/reuse-campaigns-mobile.png'),animations:'disabled'});
-  await page.setViewportSize({width:1280,height:1000});
-  await page.screenshot({path:path.join(root,'output/playwright/reuse-campaigns-desktop.png'),animations:'disabled'});
-  assert.deepEqual(errors,[]);
-  console.log('PASS: campaign/activity/nested subtask duplication, saved groups, new weekly series, retry, monthly repeats, draft preservation, mobile layout');
-  console.log('PASS: editing/creating SOP rules, automatic previews, quick add, date offsets, idempotent saves, pause/enable, mobile rules');
+await new Promise(r=>server.listen(0,'127.0.0.1',r));browser=await chromium.launch({channel:'chrome',headless:true});
+const page=await browser.newPage({viewport:{width:1280,height:1000}});page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));
+await page.route('**/*',r=>r.request().url().startsWith('http://127.0.0.1:')?r.continue():r.abort());await page.goto('http://127.0.0.1:'+server.address().port);
+// Regression: independent project, activity and nested subtask copies.
+await page.getByRole('button',{name:'Duplicate Live campaign',exact:true}).click();let dialog=page.getByRole('dialog',{name:'Duplicate campaign',exact:true});
+await dialog.getByLabel('Start date *',{exact:true}).fill('2026-12-01');await dialog.getByRole('button',{name:'Duplicate',exact:true}).click();await wait(page,()=>fixture.S.campaigns.length===2);
+let s=await state(page),copy=s.activities.find(a=>a.id!=='a1');assert.equal(copy.dueDate,'2026-12-19');assert.equal(copy.subtasks[0].due,'2026-12-18');assert.equal(copy.status,'Not started');assert.notEqual(copy.subtasks[0].id,'g1');
+await page.getByRole('button',{name:'Duplicate activity YouTube live',exact:true}).click();dialog=page.getByRole('dialog',{name:'Duplicate activity',exact:true});await dialog.getByLabel('First due date *',{exact:true}).fill('2026-11-26');await dialog.getByRole('button',{name:'Duplicate',exact:true}).click();await wait(page,()=>fixture.S.activities.length===3);
+assert.equal((await state(page)).activities.find(a=>a.title==='YouTube live (copy)').subtasks[0].due,'2026-11-25');
+await page.getByLabel('Actions for WhatsApp reminder',{exact:true}).click();await page.locator('.reuse-menu[open]').getByRole('button',{name:'Duplicate',exact:true}).click();await wait(page,()=>fixture.S.activities[0].subtasks[0].children[1].children.length===2);
+assert.equal(await page.getByText('Save checklist as reusable group',{exact:true}).count(),0);
+// One library: legacy duplicate names are distinguishable and cannot be created again.
+await page.getByRole('button',{name:'SOP library',exact:true}).click();dialog=page.getByRole('dialog',{name:'SOP library',exact:true});
+await dialog.getByRole('button',{name:'Edit SOP Launch checklist (duplicate 1)',exact:true}).waitFor();await dialog.getByRole('button',{name:'Edit SOP Launch checklist (duplicate 2)',exact:true}).waitFor();
+assert.equal(await dialog.getByText('Duplicate name from the old library. Rename this SOP to make it unique.',{exact:true}).count(),2);
+await dialog.getByRole('button',{name:'New SOP',exact:true}).click();let child=page.getByRole('dialog',{name:'New SOP',exact:true});
+await child.getByLabel('SOP name *',{exact:true}).fill(' launch  CHECKLIST ');await child.getByLabel('Platform *',{exact:true}).selectOption('YouTube');await child.getByLabel('Content format *',{exact:true}).selectOption('Long form');await child.getByLabel('Topic / category',{exact:true}).selectOption('Academic');
+await child.getByRole('button',{name:'+ Add subtask',exact:true}).click();await child.getByLabel('Subtask title',{exact:true}).last().fill('Draft script');await child.getByRole('button',{name:'+ Add subtask',exact:true}).click();await child.getByLabel('Subtask title',{exact:true}).last().fill('Publish video');
+assert.equal(await child.getByRole('button',{name:'Save SOP',exact:true}).isDisabled(),true);await child.getByText('An SOP with this name already exists. Choose a unique name.',{exact:true}).waitFor();
+await child.getByLabel('SOP name *',{exact:true}).fill('YouTube academic publishing');await child.getByRole('button',{name:'Save SOP',exact:true}).click();await dialog.waitFor();
+s=await state(page);const rule=s.sopRules.find(r=>r.name==='YouTube academic publishing');assert.equal(rule.nodes.length,2);assert.equal(rule.angle,'Academic');assert.equal(await page.evaluate(()=>fixture.claims.length),1);
+await dialog.getByRole('button',{name:'New SOP',exact:true}).click();child=page.getByRole('dialog',{name:'New SOP',exact:true});await child.getByLabel('SOP name *',{exact:true}).fill('YOUTUBE ACADEMIC PUBLISHING');await child.getByText('An SOP with this name already exists. Choose a unique name.',{exact:true}).waitFor();await child.getByRole('button',{name:'Cancel',exact:true}).click();await child.getByRole('button',{name:'Discard changes',exact:true}).click();
+// Existing groups are configured in place; their old data remains available.
+await dialog.getByRole('button',{name:'Edit SOP Launch checklist (duplicate 1)',exact:true}).click();child=page.getByRole('dialog',{name:'Edit SOP',exact:true});await child.getByLabel('SOP name *',{exact:true}).fill('Instagram academic reel');await child.getByLabel('Platform *',{exact:true}).selectOption('Instagram');await child.getByLabel('Content format *',{exact:true}).selectOption('Reel');await child.getByLabel('Topic / category',{exact:true}).selectOption('Academic');await child.getByRole('button',{name:'Save SOP',exact:true}).click();await dialog.waitFor();assert.equal((await state(page)).templates.find(t=>t.id==='old1').sopId,'legacy-old1');
+await dialog.getByRole('button',{name:'Done',exact:true}).click();
+// Creating a task offers a nudge. Skipping it creates no SOP subtasks.
+await page.getByRole('tab',{name:'Next 7 days',exact:true}).click();await page.locator('#new-act').click();dialog=page.getByRole('dialog',{name:'New activity',exact:true});await dialog.getByLabel('Activity title *',{exact:true}).fill('Skipped SOP');await dialog.getByLabel('Campaign *',{exact:true}).selectOption('c1');await dialog.getByLabel('Format',{exact:true}).selectOption('Long form');await dialog.getByLabel('Topic / category',{exact:true}).selectOption('Academic');await sopCard(dialog,'YouTube academic publishing').getByRole('button',{name:'Add 2 subtasks',exact:true}).waitFor();await dialog.getByRole('button',{name:'Create activity',exact:true}).click();await wait(page,()=>fixture.S.activities.some(a=>a.title==='Skipped SOP'));assert.equal((await state(page)).activities.find(a=>a.title==='Skipped SOP').subtasks.length,0);
+await page.locator('#new-act').click();dialog=page.getByRole('dialog',{name:'New activity',exact:true});await dialog.getByLabel('Activity title *',{exact:true}).fill('Chosen SOP');await dialog.getByLabel('Campaign *',{exact:true}).selectOption('c1');await dialog.getByLabel('Format',{exact:true}).selectOption('Long form');await dialog.getByLabel('Topic / category',{exact:true}).selectOption('Live class');assert.equal(await sopCard(dialog,'YouTube academic publishing').count(),0);await dialog.getByLabel('Topic / category',{exact:true}).selectOption('Academic');await sopCard(dialog,'YouTube academic publishing').getByRole('button',{name:'Add 2 subtasks',exact:true}).click();
+fs.mkdirSync(path.join(root,'output/playwright'),{recursive:true});await page.screenshot({path:path.join(root,'output/playwright/sop-nudge-desktop.png'),animations:'disabled'});
+await dialog.getByRole('button',{name:'Create activity',exact:true}).click();await wait(page,()=>fixture.S.activities.some(a=>a.title==='Chosen SOP'));s=await state(page);const chosen=s.activities.find(a=>a.title==='Chosen SOP');assert.equal(chosen.subtasks.length,2);assert.deepEqual(chosen.appliedSopRules,[rule.id]);
+// Quick Add follows the same topic matching and opt-in behavior.
+await page.getByRole('tab',{name:'Campaigns',exact:true}).click();let quick=page.locator('.qadd').filter({has:page.getByLabel('Activity title for Live campaign',{exact:true})});await quick.getByLabel('Activity title for Live campaign',{exact:true}).fill('Quick chosen');await quick.getByLabel('Activity format',{exact:true}).selectOption('Long form');await quick.getByLabel('Topic',{exact:true}).selectOption('Academic');await sopCard(quick,'YouTube academic publishing').getByRole('button',{name:'Add 2 subtasks',exact:true}).click();await quick.getByRole('button',{name:'Add',exact:true}).click();await wait(page,()=>fixture.S.activities.some(a=>a.title==='Quick chosen'));assert.equal((await state(page)).activities.find(a=>a.title==='Quick chosen').subtasks.length,2);
+await quick.getByLabel('Activity title for Live campaign',{exact:true}).fill('Quick skipped');await quick.getByRole('button',{name:'Add',exact:true}).click();await wait(page,()=>fixture.S.activities.some(a=>a.title==='Quick skipped'));assert.equal((await state(page)).activities.find(a=>a.title==='Quick skipped').subtasks.length,0);
+// Creating a subtask inherits its parent's conditions and offers the SOP immediately.
+await page.locator('.row-main').filter({hasText:'Chosen SOP'}).click();dialog=page.getByRole('dialog',{name:'Activity',exact:true});await dialog.locator('input.sub-add').fill('Create lecture outline');await dialog.locator('input.sub-add').press('Enter');child=page.getByRole('dialog',{name:'SOP found',exact:true});await child.waitFor();await sopCard(child,'YouTube academic publishing').getByRole('button',{name:'Add 2 subtasks',exact:true}).click();await dialog.waitFor();s=await state(page);let outline=s.activities.find(a=>a.id===chosen.id).subtasks.find(n=>n.title==='Create lecture outline');assert.equal(outline.children.length,2);assert.deepEqual(outline.appliedSopRules,[rule.id]);
+await dialog.getByRole('button',{name:'Save changes',exact:true}).click();await wait(page,()=>!document.querySelector('[role="dialog"]'));assert.equal((await state(page)).activities.find(a=>a.id===chosen.id).subtasks.length,3);
+// Subtask conditions can be overridden without losing progress; depth limits are visible.
+await page.getByRole('button',{name:'Edit details for Thumbnail',exact:true}).first().click();child=page.getByRole('dialog',{name:'Edit subtask',exact:true});await child.locator('summary').filter({hasText:'SOP conditions'}).click();await child.getByLabel('Content format',{exact:true}).selectOption('Long form');await child.getByLabel('Topic / category',{exact:true}).selectOption('Academic');assert.equal(await sopCard(child,'YouTube long form SOP').getByRole('button',{name:'Add 8 subtasks',exact:true}).isDisabled(),true);await sopCard(child,'YouTube academic publishing').getByRole('button',{name:'Add 2 subtasks',exact:true}).click();await child.getByRole('button',{name:'Save subtask',exact:true}).click();await wait(page,()=>!document.querySelector('[role="dialog"]'));s=await state(page);const thumb=s.activities[0].subtasks[0].children[0];assert.equal(thumb.done,true);assert.equal(thumb.children.length,2);assert.equal(thumb.type,'Long form');assert.equal(thumb.angle,'Academic');
+// Monthly recurrence still works with independent nested checklists and preserves drafts.
+await page.locator('.row-main').filter({hasText:'Chosen SOP'}).click();dialog=page.getByRole('dialog',{name:'Activity',exact:true});await dialog.getByLabel('Activity title *',{exact:true}).fill('Unsaved draft');await dialog.getByRole('button',{name:'Repeat activity',exact:true}).click();child=page.getByRole('dialog',{name:'Repeat activity',exact:true});await child.getByLabel('First due date *',{exact:true}).fill('2027-01-31');await child.getByLabel('Repeat',{exact:true}).selectOption('monthly');await child.getByLabel('Total occurrences (2–52)',{exact:true}).fill('3');await child.getByRole('button',{name:'Create repeats',exact:true}).click();await dialog.waitFor();assert.equal(await dialog.getByLabel('Activity title *',{exact:true}).inputValue(),'Unsaved draft');assert.deepEqual((await state(page)).activities.slice(-3).map(a=>a.dueDate),['2027-01-31','2027-02-28','2027-03-31']);await dialog.getByRole('button',{name:'Close dialog',exact:true}).click();await dialog.getByRole('button',{name:'Discard changes',exact:true}).click();
+// Search finds work inside nested checklists.
+await page.getByRole('searchbox',{name:'Search campaigns',exact:true}).fill('Create lecture outline');assert.equal(await page.locator('.row-main').filter({hasText:'Chosen SOP'}).count()>0,true);await page.getByRole('searchbox',{name:'Search campaigns',exact:true}).fill('');
+// Mobile library: clear conditions, direct editing, pause/resume and recoverable removal.
+await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'SOP library',exact:true}).click();dialog=page.getByRole('dialog',{name:'SOP library',exact:true});await dialog.getByRole('button',{name:'Pause SOP YouTube academic publishing',exact:true}).click();await dialog.getByRole('button',{name:'Enable SOP YouTube academic publishing',exact:true}).waitFor();await dialog.getByRole('button',{name:'Enable SOP YouTube academic publishing',exact:true}).click();await dialog.getByRole('button',{name:'Pause SOP YouTube academic publishing',exact:true}).waitFor();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await page.screenshot({path:path.join(root,'output/playwright/sop-library-mobile.png'),animations:'disabled'});
+await dialog.getByRole('button',{name:'Edit SOP YouTube academic publishing',exact:true}).click();child=page.getByRole('dialog',{name:'Edit SOP',exact:true});await child.getByLabel('SOP name *',{exact:true}).fill('Renamed academic SOP');await page.evaluate(()=>{fixture.failNext=true});await child.getByRole('button',{name:'Save SOP',exact:true}).click();await child.getByText("You don't have permission to change this.",{exact:true}).waitFor();await child.getByRole('button',{name:'Save SOP',exact:true}).click();await dialog.waitFor();await dialog.getByRole('button',{name:'Delete SOP Renamed academic SOP',exact:true}).click();await dialog.getByRole('button',{name:'Remove item',exact:true}).click();await wait(page,()=>fixture.S.sopRules.find(r=>r.name==='Renamed academic SOP').archived===true);assert.equal((await state(page)).activities.find(a=>a.id===chosen.id).subtasks.length,3);
+await dialog.getByRole('button',{name:'Done',exact:true}).click();await page.setViewportSize({width:1280,height:1000});
+await page.locator('#new-act').click();dialog=page.getByRole('dialog',{name:'New campaign',exact:true});await dialog.getByLabel('Campaign name *',{exact:true}).fill('New launch journey');await dialog.getByRole('button',{name:'Create campaign',exact:true}).click();await wait(page,()=>fixture.S.campaigns.some(c=>c.name==='New launch journey'));
+quick=page.locator('.qadd').filter({has:page.getByLabel('Activity title for New launch journey',{exact:true})});await quick.getByLabel('Activity title for New launch journey',{exact:true}).fill('First planned activity');await quick.getByRole('button',{name:'Add',exact:true}).click();await wait(page,()=>fixture.S.activities.some(a=>a.title==='First planned activity'));assert.equal((await state(page)).activities.find(a=>a.title==='First planned activity').campaignId,(await state(page)).campaigns.find(c=>c.name==='New launch journey').id);
+assert.deepEqual(errors,[]);console.log('PASS: duplication/recurrence regression; unified library; duplicate-name blocking; legacy conversion; topic-specific opt-in nudges in forms, Quick Add and subtasks; progress preservation; depth limits; failed-write retry; mobile layout');
 })().catch(e=>{console.error(e);process.exitCode=1}).finally(async()=>{if(browser)await browser.close();server.close()});

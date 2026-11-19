@@ -12,7 +12,7 @@ var FORMATS=[
   {id:"Story",label:"Story",group:"Instagram",platforms:["Instagram"],
    angles:["Updates","Carousel based story","Promotional"]},
   {id:"Long form",label:"Long form",group:"YouTube",platforms:["YouTube"],
-   angles:["Vacancy","High yield","GOLD lecture — Edition 6.5","Strategy video","Testimonial video","Opinion video"]},
+   angles:["Academic","Live class","Vacancy","High yield","GOLD lecture — Edition 6.5","Strategy video","Testimonial video","Opinion video"]},
   {id:"Live",label:"Live",group:"YouTube",platforms:["YouTube"],
    angles:["Academic discussion","Strategy discussion","Vacancy live"]},
   {id:"Short",label:"Short",group:"YouTube",platforms:["YouTube"],cta:true,
@@ -173,7 +173,8 @@ function matchesSearch(a){
   var q=S.query.trim().toLowerCase();
   if(!q)return true;
   var c=campById(a.campaignId);
-  return [a.title,a.type,a.angle,a.description,(a.keywords||[]).join(" "),c&&c.name].join(" ").toLowerCase().indexOf(q)>=0;
+  function subtext(nodes){return (nodes||[]).map(function(n){return [n.title,n.description,subtext(kids(n))].join(" ")}).join(" ")}
+  return [a.title,a.type,a.angle,a.description,(a.keywords||[]).join(" "),c&&c.name,subtext(a.subtasks)].join(" ").toLowerCase().indexOf(q)>=0;
 }
 function campaignMatches(c){
   var f=S.filters,q=S.query.trim().toLowerCase();
@@ -269,7 +270,7 @@ function renderHead(){
   add.onclick=!cal?function(){openCampaign(null)}:function(){openActivity(null,S.calView==="next7"?S.focusDay:undefined)};
   heading.appendChild(add);box.appendChild(heading);
   if(S.me&&!S.loading&&writable()){
-    var rules=el("button","text-button sop-manage","SOP rules");rules.onclick=openSopRules;heading.appendChild(rules);
+    var rules=el("button","text-button sop-manage","SOP library");rules.onclick=openSopRules;heading.appendChild(rules);
   }
   var ctl=el("div","pctl");
   if(cal&&(S.calView==="week"||S.calView==="month")){
@@ -728,7 +729,7 @@ function renderCampaigns(main){
 var wq=Promise.resolve();
 function sid(){return "s"+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
 function newNode(title,kind,plat){
-  return {id:sid(),title:title,description:"",done:false,owner:"",due:"",kind:kind||"",platform:plat||"",children:[]};
+  return {id:sid(),title:title,description:"",done:false,owner:"",due:"",kind:kind||"",platform:plat||"",type:"",angle:"",children:[]};
 }
 function nodeById(nodes,id){
   for(var i=0;i<(nodes||[]).length;i++){
@@ -809,8 +810,9 @@ function persistSubs(a){
   var arr=(a.subtasks||[]).slice();
   wq=wq.then(function(){return db.doc("activities/"+a.id).update({subtasks:arr})})
        .catch(function(e){toast(msgFor(e))});
+  return wq;
 }
-function saveSubs(a,arr){a.subtasks=arr;persistSubs(a);render()}
+function saveSubs(a,arr){a.subtasks=arr;var saved=persistSubs(a);render();return saved}
 
 /* Copies always have their own IDs and start with a fresh checklist. */
 function copyNodes(nodes,offset){
@@ -905,64 +907,29 @@ function openDuplicate(source,campaign,repeating){
   };
   ui.foot.appendChild(save);validate();overlay(ui.node,null,true);
 }
-function saveTemplate(a,nodes,suggested){
-  if(!writable()||!nodes.length)return;
-  var ui=actionDialog("Save reusable group","Reuse these steps in any activity. Owners and details are kept; deadlines stay relative to the activity date and progress resets.");
-  var name=input("text",suggested||a.title);ui.body.appendChild(field("Group name *",name));
-  var save=el("button","btn btn-p sp","Save group");name.oninput=function(){save.disabled=!name.value.trim()};
-  save.onclick=function(){if(!name.value.trim())return;runDialogSave(ui,save,function(){
-    return db.collection("subtaskTemplates").add({name:name.value.trim(),nodes:copyNodes(nodes),anchorDate:a.dueDate,createdAt:new Date().toISOString()});
-  },function(){toast("Reusable group saved")})};
-  ui.foot.appendChild(save);name.oninput();overlay(ui.node,null,true);
-}
-function openTemplatePicker(a,parentId,depth,onAdd){
-  if(!writable())return;
-  var ui=actionDialog("Add saved group","Choose a reusable checklist or group. It will be added alongside your existing steps.");
-  if(S.templatesLoading)ui.body.appendChild(el("p","hint","Saved groups are still loading. Close this dialog and try again in a moment."));
-  else if(S.templateError)ui.body.appendChild(el("p","hint err",S.templateError));
-  else if(!S.templates.length)ui.body.appendChild(el("p","hint","No saved groups yet. Use Save as reusable group on a checklist or subtask first."));
-  S.templates.slice().sort(function(a,b){return a.name.localeCompare(b.name)}).forEach(function(t){
-    var row=el("div","template-row"),main=el("div");main.appendChild(el("strong",null,t.name));
-    var fits=treeDepth(t.nodes)+depth<=MAXDEPTH;
-    main.appendChild(el("p","hint",fits?leaves(t.nodes).length+" steps":"Too many nesting levels for this location"));row.appendChild(main);
-    var add=el("button","btn btn-o","Add group");add.disabled=!fits;
-    add.onclick=function(){
-      var offset=t.anchorDate&&a.dueDate?daysBetween(t.anchorDate,a.dueDate):0,nodes=copyNodes(t.nodes,offset);
-      closeOverlay(true);onAdd(nodes,parentId);toast("Added "+t.name);
-    };row.appendChild(add);
-    var del=el("button","text-button","Delete");del.setAttribute("aria-label","Delete saved group "+t.name);
-    del.onclick=function(){confirmRemoval(row,"Delete this saved group? Existing activities keep their steps.",function(){
-      del.disabled=true;db.doc("subtaskTemplates/"+t.id).delete().then(function(){row.remove();toast("Saved group deleted")}).catch(function(e){del.disabled=false;toast(msgFor(e))});
-    })};row.appendChild(del);ui.body.appendChild(row);
-  });overlay(ui.node,null,true);
-}
-function checklistTools(a,onChange){
-  var bar=el("div","reuse-tools"),add=el("button","tpl-btn","+ Add saved group"),save=el("button","tpl-btn","Save checklist as reusable group");
-  add.onclick=function(){openTemplatePicker(a,null,0,function(nodes){a.subtasks=(a.subtasks||[]).concat(nodes);onChange()})};
-  save.disabled=!(a.subtasks||[]).length;save.onclick=function(){saveTemplate(a,a.subtasks,a.title)};bar.appendChild(add);bar.appendChild(save);return bar;
-}
-function subReuseActions(a,s,depth,onChange){
-  var menu=el("details","reuse-menu"),summary=el("summary",null,"⋯");summary.title="Subtask actions";summary.setAttribute("aria-label","Actions for "+s.title);menu.appendChild(summary);
-  function action(label,fn){var b=el("button",null,label);b.onclick=function(){menu.open=false;fn()};menu.appendChild(b)}
-  action("Duplicate",function(){var copy=copyNodes([s])[0];copy.title+=" (copy)";a.subtasks=insertAfter(a.subtasks,s.id,copy);onChange();toast("Subtask duplicated")});
-  action("Save as reusable group",function(){saveTemplate(a,[s],s.title)});
-  if(depth<MAXDEPTH-1)action("Add saved group inside",function(){openTemplatePicker(a,s.id,depth+1,function(nodes){
-    nodes.forEach(function(n){a.subtasks=addChild(a.subtasks,s.id,n)});S.expanded["n"+s.id]=true;onChange();
-  })});return menu;
-}
-
-/* SOP rules attach fresh steps once per rule. Editing or pausing a rule never
-   rewrites the work already attached to an activity. */
-var DEFAULT_SOP={id:"builtin-youtube-long-form",name:"YouTube long form SOP",platform:"YouTube",format:"Long form",enabled:true,source:"suggested"};
+/* One library owns SOP names, conditions and editable checklists. Legacy groups
+   remain visible here until edited; no existing checklist is deleted. */
+var DEFAULT_SOP={id:"builtin-youtube-long-form",name:"YouTube long form SOP",platform:"YouTube",format:"Long form",angle:"",enabled:true,source:"suggested"};
+function normalizeSopName(name){return String(name||"").normalize("NFKC").trim().replace(/\s+/g," ").toLowerCase()}
+function sopNameKey(name){return "n-"+encodeURIComponent(normalizeSopName(name))}
 function allSopRules(){
   var rules=S.sopRules.slice();
   if(!rules.some(function(r){return r.id===DEFAULT_SOP.id}))rules.unshift(DEFAULT_SOP);
-  return rules;
+  S.templates.filter(function(t){return !t.sopId&&!t.archived}).forEach(function(t){
+    rules.push(Object.assign({},t,{id:"legacy-"+t.id,legacyId:t.id,enabled:false,platform:t.platform||"",format:t.format||"",angle:t.angle||""}));
+  });return rules.filter(function(r){return !r.archived});
 }
+function sopNameTaken(name,id){return allSopRules().some(function(r){return r.id!==id&&normalizeSopName(r.name)===normalizeSopName(name)})}
+function sopDisplayName(rule){
+  var matches=allSopRules().filter(function(r){return normalizeSopName(r.name)===normalizeSopName(rule.name)}).sort(function(a,b){return (a.createdAt||"").localeCompare(b.createdAt||"")||a.id.localeCompare(b.id)});
+  if(matches.length<2)return rule.name;
+  return rule.name+" (duplicate "+(matches.findIndex(function(r){return r.id===rule.id})+1)+")";
+}
+function sopCondition(rule){return [rule.platform||"Platform not set",rule.format||"Format not set",rule.angle||"Any topic"].join(" → ")}
 function sopMatches(a){
   if(!S.sopReady)return [];
-  return allSopRules().filter(function(r){return r.enabled&&(!r.format||r.format===a.type)&&
-    (!r.platform||(a.platforms||[]).indexOf(r.platform)>=0)});
+  return allSopRules().filter(function(r){return r.enabled&&r.platform&&r.format&&r.format===a.type&&
+    (!r.angle||r.angle===(a.angle||""))&&(a.platforms||[]).indexOf(r.platform)>=0}).sort(function(a,b){return Number(!!b.angle)-Number(!!a.angle)||a.name.localeCompare(b.name)});
 }
 function sopNodes(rule){return rule.nodes||buildSteps(STEPS[rule.format]||["Script","Edit","Review"])}
 function mergeSopNodes(existing,incoming){
@@ -974,94 +941,192 @@ function mergeSopNodes(existing,incoming){
     else if(kids(n).length)out[match]=Object.assign({},out[match],{children:mergeSopNodes(kids(out[match]),kids(n))});
   });return out;
 }
-function applySopRules(a){
-  var nodes=a.subtasks||[],applied=(a.appliedSopRules||[]).slice();
-  sopMatches(a).forEach(function(rule){
-    if(applied.indexOf(rule.id)>=0)return;
-    var offset=rule.anchorDate&&a.dueDate?daysBetween(rule.anchorDate,a.dueDate):0;
-    nodes=mergeSopNodes(nodes,copyNodes(sopNodes(rule),offset));applied.push(rule.id);
-  });return Object.assign({},a,{subtasks:nodes,appliedSopRules:applied});
+function appendSop(target,rule,date){
+  var applied=(target.appliedSopRules||[]).slice();if(applied.indexOf(rule.id)>=0)return target;
+  var offset=rule.anchorDate&&date?daysBetween(rule.anchorDate,date):0;
+  applied.push(rule.id);
+  return Object.assign({},target,{appliedSopRules:applied,children:mergeSopNodes(kids(target),copyNodes(sopNodes(rule),offset))});
 }
-function saveActivityWithSops(id,patch){
-  return wq.then(function(){return db.runTransaction(function(tx){
-    var ref=db.doc("activities/"+id);
+/* No rule is applied without an explicit selection in the nudge. */
+function applySopRules(a,selected){
+  var target={children:a.subtasks||[],appliedSopRules:a.appliedSopRules||[]};
+  sopMatches(a).forEach(function(rule){if((selected||[]).indexOf(rule.id)>=0)target=appendSop(target,rule,a.dueDate)});
+  return Object.assign({},a,{subtasks:target.children,appliedSopRules:target.appliedSopRules});
+}
+function subtaskLocation(a,id,nodes,parent,depth){
+  nodes=nodes||a.subtasks||[];parent=parent||{platforms:a.platforms||[],type:a.type||"",angle:a.angle||""};depth=depth||0;
+  for(var i=0;i<nodes.length;i++){
+    var n=nodes[i],context={platforms:n.platform?[n.platform]:parent.platforms,type:n.type||parent.type,
+      angle:n.angle||(!n.type||n.type===parent.type?parent.angle:"")};
+    if(n.id===id)return {node:n,context:context,parent:parent,depth:depth};
+    var found=subtaskLocation(a,id,kids(n),context,depth+1);if(found)return found;
+  }return null;
+}
+function saveActivityWithSops(id,patch,selected){
+  return wq.then(function(){return db.runTransaction(function(tx){var ref=db.doc("activities/"+id);
     return tx.get(ref).then(function(snap){
       if(!snap.exists){var e=new Error();e.code="not-found";throw e}
-      var current=snap.data(),next=applySopRules(Object.assign({},current,patch)),update=Object.assign({},patch);
-      if(JSON.stringify(next.appliedSopRules)!==JSON.stringify(current.appliedSopRules||[])){
-        update.subtasks=next.subtasks;update.appliedSopRules=next.appliedSopRules;
-      }tx.update(ref,update);
+      var current=snap.data(),next=applySopRules(Object.assign({},current,patch),selected),update=Object.assign({},patch);
+      if(JSON.stringify(next.appliedSopRules)!==JSON.stringify(current.appliedSopRules||[])){update.subtasks=next.subtasks;update.appliedSopRules=next.appliedSopRules}
+      tx.update(ref,update);
     });
   })});
 }
+function saveSubtaskWithSops(a,id,changes,selected,manual){
+  return wq.then(function(){return db.runTransaction(function(tx){var ref=db.doc("activities/"+a.id);
+    return tx.get(ref).then(function(snap){
+      if(!snap.exists){var e=new Error();e.code="not-found";throw e}
+      var current=Object.assign({id:a.id},snap.data()),location=id?subtaskLocation(current,id):null;
+      if(id&&!location){var e=new Error();e.code="not-found";throw e}
+      var target=id?Object.assign({},location.node,changes):{children:current.subtasks||[],appliedSopRules:current.appliedSopRules||[]};
+      var updated=id?patchNode(current.subtasks,id,target):current.subtasks;
+      var context=id?subtaskLocation(Object.assign({},current,{subtasks:updated}),id).context:current;
+      var choices=manual?allSopRules():sopMatches(context);
+      choices.forEach(function(rule){
+        if((selected||[]).indexOf(rule.id)<0)return;
+        if(treeDepth(sopNodes(rule))+(id?location.depth+1:0)>MAXDEPTH){var e=new Error();e.userMessage="This SOP is too deep for this subtask.";throw e}
+        target=appendSop(target,rule,(id&&target.due)||current.dueDate);
+      });
+      var patch=id?{subtasks:patchNode(current.subtasks,id,target)}:{subtasks:target.children,appliedSopRules:target.appliedSopRules};
+      tx.update(ref,patch);return Object.assign({},current,patch);
+    });
+  })}).then(function(current){a.subtasks=current.subtasks;a.appliedSopRules=current.appliedSopRules||[];render();return current});
+}
+function sopChecklistList(nodes){var list=el("ul","sop-steps");(nodes||[]).forEach(function(n){var item=el("li",null,n.title);if(kids(n).length)item.appendChild(sopChecklistList(kids(n)));list.appendChild(item)});return list}
+function sopAdditionCount(target,rule){return Math.max(0,leaves(mergeSopNodes(kids(target),sopNodes(rule))).length-leaves(kids(target)).length)}
+function renderSopNudge(host,context,target,depth,onSelect,selected){
+  clear(host);var matches=sopMatches(context).filter(function(r){return (target.appliedSopRules||[]).indexOf(r.id)<0&&sopAdditionCount(target,r)>0});
+  host.hidden=!matches.length;if(!matches.length)return;
+  host.appendChild(el("strong",null,"Found an SOP for these conditions"));
+  matches.forEach(function(rule){
+    var row=el("div","sop-match"),count=sopAdditionCount(target,rule),fits=treeDepth(sopNodes(rule))+depth<=MAXDEPTH;
+    row.appendChild(el("p",null,sopDisplayName(rule)));row.appendChild(el("p","hint",sopCondition(rule)));
+    var chosen=(selected||[]).indexOf(rule.id)>=0,add=el("button","btn btn-o",chosen?"Remove selection":"Add "+count+" "+(count===1?"subtask":"subtasks"));
+    add.disabled=!fits;add.onclick=function(){onSelect(rule.id,!chosen)};row.appendChild(add);
+    if(chosen)row.appendChild(el("p","hint","Selected. These steps will be added when you save."));
+    if(!fits)row.appendChild(el("p","hint","This SOP exceeds the nesting limit here. Use it on the parent task."));
+    var preview=el("details"),summary=el("summary",null,"Preview "+count+" subtasks");preview.appendChild(summary);preview.appendChild(sopChecklistList(sopNodes(rule)));row.appendChild(preview);host.appendChild(row);
+  });
+}
+function offerSubtaskSop(a,id,onSaved){
+  return wq.then(function(){
+    var current=S.activities.find(function(x){return x.id===a.id})||a,location=subtaskLocation(current,id);
+    if(!location||!sopMatches(location.context).some(function(r){return (location.node.appliedSopRules||[]).indexOf(r.id)<0&&sopAdditionCount(location.node,r)>0&&treeDepth(sopNodes(r))+location.depth+1<=MAXDEPTH}))return;
+    var ui=actionDialog("SOP found",location.node.title+": choose whether to add a matching checklist."),nudge=el("div","sop-preview");ui.cancel.textContent="Not now";ui.body.appendChild(nudge);
+    renderSopNudge(nudge,location.context,location.node,location.depth+1,function(ruleId){
+      var button=ui.body.querySelector("button");runDialogSave(ui,button,function(){return saveSubtaskWithSops(current,id,{},[ruleId])},function(saved){a.subtasks=saved.subtasks;if(onSaved)onSaved(saved);toast("SOP subtasks added")});
+    },[]);overlay(ui.node,null,true);
+  });
+}
 function storeSopRule(rule){
-  var payload=Object.assign({},rule);delete payload.id;
-  var ref=rule.id?db.doc("sopRules/"+rule.id):db.collection("sopRules").doc();
-  return ref.set(payload).then(function(){
-    S.sopRules=S.sopRules.filter(function(r){return r.id!==ref.id}).concat([Object.assign({},payload,{id:ref.id})]);render();
+  if(!S.sopReady||S.templatesLoading||S.templateError){var e=new Error();e.userMessage="Wait for the SOP library to load before saving.";return Promise.reject(e)}
+  if(sopNameTaken(rule.name,rule.id)){var e=new Error();e.userMessage="An SOP with this name already exists. Choose a unique name.";return Promise.reject(e)}
+  var payload=Object.assign({},rule),legacy=payload.legacyId;delete payload.id;delete payload.legacyId;
+  payload.name=payload.name.trim().replace(/\s+/g," ");payload.nameKey=sopNameKey(payload.name);
+  var ref=rule.id?db.doc("sopRules/"+rule.id):db.collection("sopRules").doc(),claim=db.doc("sopNameClaims/"+payload.nameKey);
+  return db.runTransaction(function(tx){return Promise.all([tx.get(ref),tx.get(claim)]).then(function(snaps){
+    if(snaps[1].exists&&snaps[1].data().sopId!==ref.id){var e=new Error();e.userMessage="An SOP with this name already exists. Choose a unique name.";throw e}
+    var oldKey=snaps[0].exists&&snaps[0].data().nameKey,oldRef=oldKey&&oldKey!==payload.nameKey?db.doc("sopNameClaims/"+oldKey):null;
+    return (oldRef?tx.get(oldRef):Promise.resolve(null)).then(function(old){
+      tx.set(ref,payload);tx.set(claim,{sopId:ref.id,name:payload.name});
+      if(old&&old.exists&&old.data().sopId===ref.id)tx.delete(oldRef);
+      if(legacy)tx.update(db.doc("subtaskTemplates/"+legacy),{sopId:ref.id});
+    });
+  })}).then(function(){
+    S.sopRules=S.sopRules.filter(function(r){return r.id!==ref.id}).concat([Object.assign({},payload,{id:ref.id})]);
+    if(legacy)S.templates=S.templates.map(function(t){return t.id===legacy?Object.assign({},t,{sopId:ref.id}):t});render();
+  });
+}
+function archiveSop(rule){
+  var ref=db.doc((rule.legacyId?"subtaskTemplates/":"sopRules/")+(rule.legacyId||rule.id));
+  return db.runTransaction(function(tx){return tx.get(ref).then(function(snap){
+    var key=snap.exists&&snap.data().nameKey,claim=key?db.doc("sopNameClaims/"+key):null;
+    return (claim?tx.get(claim):Promise.resolve(null)).then(function(name){
+      tx.set(ref,Object.assign({},snap.exists?snap.data():rule,{archived:true,enabled:false}));
+      if(name&&name.exists&&name.data().sopId===rule.id)tx.delete(claim);
+    });
+  })}).then(function(){
+    if(rule.legacyId)S.templates=S.templates.map(function(t){return t.id===rule.legacyId?Object.assign({},t,{archived:true}):t});
+    else S.sopRules=S.sopRules.filter(function(r){return r.id!==rule.id}).concat([Object.assign({},rule,{archived:true,enabled:false})]);render();
   });
 }
 function openSopRules(){
   if(!writable())return;
-  var ui=actionDialog("SOP rules","Automatically add steps when an activity matches a platform and format. Rules apply when creating or saving an activity. Existing work is kept, and each rule runs once per activity.");
-  ui.cancel.textContent="Done";
+  var ui=actionDialog("SOP library","Keep the checklist and its conditions together. Matching tasks and subtasks offer an Add subtasks nudge. SOPs are applied only when you choose to add them.");ui.cancel.textContent="Done";
   var list=el("div","sop-rule-list");ui.body.appendChild(list);
   function draw(){
     clear(list);
     allSopRules().forEach(function(rule){
-      var row=el("div","template-row"),summary=el("div");summary.appendChild(el("strong",null,rule.name));
-      summary.appendChild(el("p","hint",(rule.platform||"Any platform")+" + "+(rule.format||"Any format")+" → "+leaves(sopNodes(rule)).length+" steps · "+(rule.enabled?"Enabled":"Paused")));
-      row.appendChild(summary);
-      var edit=el("button","btn btn-o","Edit");edit.setAttribute("aria-label","Edit rule "+rule.name);edit.onclick=function(){openSopRule(rule,draw)};row.appendChild(edit);
-      var toggle=el("button","text-button",rule.enabled?"Pause":"Enable");toggle.setAttribute("aria-label",(rule.enabled?"Pause":"Enable")+" rule "+rule.name);
-      toggle.onclick=function(){toggle.disabled=true;storeSopRule(Object.assign({},rule,{enabled:!rule.enabled})).then(draw).catch(function(e){toggle.disabled=false;toast(msgFor(e))})};row.appendChild(toggle);
-      if(rule.id!==DEFAULT_SOP.id){
-        var remove=el("button","text-button","Delete");remove.setAttribute("aria-label","Delete rule "+rule.name);
-        remove.onclick=function(){confirmRemoval(row,"Delete this SOP rule? Existing activities keep their steps.",function(){
-          remove.disabled=true;db.doc("sopRules/"+rule.id).delete().then(function(){S.sopRules=S.sopRules.filter(function(r){return r.id!==rule.id});draw();render();toast("SOP rule deleted")}).catch(function(e){remove.disabled=false;toast(msgFor(e))});
-        })};row.appendChild(remove);
-      }list.appendChild(row);
+      var row=el("div","template-row"),summary=el("div");summary.appendChild(el("strong",null,sopDisplayName(rule)));
+      summary.appendChild(el("p","hint",sopCondition(rule)+" · "+leaves(sopNodes(rule)).length+" subtasks · "+(!rule.platform||!rule.format?"Needs setup":rule.enabled?"Enabled":"Paused")));
+      if(rule.legacyId)summary.appendChild(el("p","hint","Existing saved group. Edit to set its SOP conditions."));
+      if(sopNameTaken(rule.name,rule.id))summary.appendChild(el("p","hint warn","Duplicate name from the old library. Rename this SOP to make it unique."));row.appendChild(summary);
+      var edit=el("button","btn btn-o",rule.legacyId?"Set up":"Edit");edit.setAttribute("aria-label","Edit SOP "+sopDisplayName(rule));edit.onclick=function(){openSopRule(rule,draw)};row.appendChild(edit);
+      var toggle=el("button","text-button",rule.enabled?"Pause":"Enable");toggle.setAttribute("aria-label",(rule.enabled?"Pause":"Enable")+" SOP "+sopDisplayName(rule));toggle.disabled=!rule.platform||!rule.format||!!rule.legacyId;
+      toggle.onclick=function(){toggle.disabled=true;var updated=Object.assign({},rule,{enabled:!rule.enabled});
+        var work=S.sopRules.some(function(r){return r.id===rule.id})?db.doc("sopRules/"+rule.id).update({enabled:updated.enabled}).then(function(){S.sopRules=S.sopRules.map(function(r){return r.id===rule.id?updated:r});render()}):storeSopRule(updated);
+        work.then(draw).catch(function(e){toggle.disabled=false;toast(e.userMessage||msgFor(e))});
+      };if(rule.platform&&rule.format&&!rule.legacyId)row.appendChild(toggle);
+      var remove=el("button","text-button","Delete");remove.setAttribute("aria-label","Delete SOP "+sopDisplayName(rule));
+      remove.onclick=function(){confirmRemoval(row,"Remove this SOP from the library? Existing task checklists stay intact.",function(){remove.disabled=true;archiveSop(rule).then(draw).catch(function(e){remove.disabled=false;toast(msgFor(e))})})};if(rule.legacyId||S.sopRules.some(function(r){return r.id===rule.id}))row.appendChild(remove);
+      var preview=el("details","sop-library-preview"),label=el("summary",null,"Preview checklist");preview.appendChild(label);preview.appendChild(sopChecklistList(sopNodes(rule)));row.appendChild(preview);list.appendChild(row);
     });
   }
-  var add=el("button","btn btn-p sp","New rule");add.onclick=function(){openSopRule(null,draw)};ui.foot.appendChild(add);draw();overlay(ui.node,null,true);
+  var add=el("button","btn btn-p sp","New SOP");add.onclick=function(){openSopRule(null,draw)};ui.foot.appendChild(add);draw();overlay(ui.node,null,true);
+}
+function sopTopicSelect(type,value,blank){
+  var f=formatById(type),options=f?f.angles.slice():[];if(value&&options.indexOf(value)<0)options.push(value);
+  return dropdown(options.map(function(v){return[v,v]}),value||"",blank||"Any topic");
 }
 function openSopRule(rule,onSaved){
-  var ui=actionDialog(rule?"Edit SOP rule":"New SOP rule","Choose when this rule runs and which steps it adds. To use your own SOP, first save an activity checklist as a reusable group.");
-  var name=input("text",rule?rule.name:"","e.g. YouTube long form production"),platform=dropdown(PLATFORMS.map(function(p){return[p[0],p[0]]}),rule?rule.platform:"","Any platform"),
-    format=formatSelect(rule?rule.format:"","Any format"),source=el("select"),preview=el("p","hint");
-  ui.body.appendChild(field("Rule name *",name));ui.body.appendChild(field("Platform",platform));ui.body.appendChild(field("Format",format));
-  function sources(){
-    var previous=source.value;clear(source);
-    if(rule&&rule.nodes){var current=el("option",null,"Keep current SOP checklist");current.value="current";source.appendChild(current)}
-    var suggested=el("option",null,"Suggested checklist"+(format.value?" for "+format.value.toLowerCase():" (choose a format)"));suggested.value="suggested";source.appendChild(suggested);
-    S.templates.forEach(function(t){var op=el("option",null,t.name);op.value=t.id;source.appendChild(op)});
-    source.value=previous||((rule&&rule.nodes)?"current":"suggested");
+  var ui=actionDialog(rule?"Edit SOP":"New SOP","Give this SOP a unique name, set its matching conditions, and build the checklist here.");
+  var d={name:rule?rule.name:"",platform:rule?rule.platform:"",format:rule?rule.format:"",angle:rule?(rule.angle||""):"",nodes:rule?copyNodes(sopNodes(rule)):[],anchorDate:rule?(rule.anchorDate||""):""};
+  var initial=JSON.stringify(d),name=input("text",d.name,"e.g. YouTube academic video"),platform=dropdown(PLATFORMS.map(function(p){return[p[0],p[0]]}),d.platform,"Choose platform"),format=formatSelect(d.format,"Choose content format"),topicWrap=el("div"),builder=el("div","sop-builder"),hint=el("p","hint err");name.maxLength=100;
+  ui.body.appendChild(field("SOP name *",name));ui.body.appendChild(field("Platform *",platform));ui.body.appendChild(field("Content format *",format));ui.body.appendChild(topicWrap);
+  function drawTopic(){clear(topicWrap);var topic=sopTopicSelect(d.format,d.angle);topic.onchange=function(){d.angle=topic.value};topicWrap.appendChild(field("Topic / category",topic,"Any topic matches every topic within the selected format."))}
+  var source=dropdown([["","Build or edit the checklist below"]].concat(S.activities.filter(function(a){return (a.subtasks||[]).length}).map(function(a){var c=campById(a.campaignId);return[a.id,a.title+" · "+fmtShort(a.dueDate)+(c?" · "+c.name:"")]})),"",null);
+  source.onchange=function(){var a=S.activities.find(function(x){return x.id===source.value});if(!a)return;d.nodes=copyNodes(a.subtasks);d.anchorDate=a.dueDate;d.platform=(a.platforms||[])[0]||d.platform;d.format=a.type||d.format;d.angle=a.angle||"";platform.value=d.platform;format.value=d.format;drawTopic();drawBuilder();validate()};
+  ui.body.appendChild(field("Start from an activity checklist (optional)",source,"Copies the checklist into this SOP. You can edit it below."));
+  var suggested=el("button","tpl-btn","Use suggested checklist for this format");suggested.onclick=function(){d.nodes=buildSteps(STEPS[d.format]||["Script","Edit","Review"]);d.anchorDate="";drawBuilder();validate()};ui.body.appendChild(suggested);
+  ui.body.appendChild(el("strong","sop-builder-title","Subtasks"));ui.body.appendChild(builder);ui.body.appendChild(hint);
+  var save=el("button","btn btn-p sp","Save SOP");
+  function drawBuilder(focus){
+    clear(builder);
+    function rows(nodes,depth){nodes.forEach(function(n){
+      var row=el("div","sop-step-row");row.style.marginLeft=(depth*14)+"px";
+      var title=input("text",n.title,"Name this subtask");title.setAttribute("aria-label","Subtask title");title.setAttribute("data-sop-node",n.id);title.oninput=function(){d.nodes=patchNode(d.nodes,n.id,{title:title.value});validate()};row.appendChild(title);
+      if(depth<MAXDEPTH-1){var child=el("button","text-button","+ Nested");child.setAttribute("aria-label","Add nested subtask under "+(n.title||"untitled step"));child.onclick=function(){var fresh=newNode("","");d.nodes=addChild(d.nodes,n.id,fresh);drawBuilder(fresh.id);validate()};row.appendChild(child)}
+      var remove=el("button","text-button","Remove");remove.setAttribute("aria-label","Remove SOP subtask "+(n.title||"untitled step"));remove.onclick=function(){d.nodes=removeNode(d.nodes,n.id);drawBuilder();validate()};row.appendChild(remove);builder.appendChild(row);rows(kids(n),depth+1);
+    })}rows(d.nodes,0);
+    var add=el("button","tpl-btn","+ Add subtask");add.onclick=function(){var fresh=newNode("","");d.nodes=d.nodes.concat([fresh]);drawBuilder(fresh.id);validate()};builder.appendChild(add);
+    if(focus){var control=builder.querySelector('[data-sop-node="'+focus+'"]');if(control)control.focus()}
   }
-  function selection(){
-    if(source.value==="current")return {nodes:rule.nodes,anchorDate:rule.anchorDate||""};
-    if(source.value==="suggested")return {nodes:buildSteps(STEPS[format.value]||["Script","Edit","Review"]),anchorDate:""};
-    return S.templates.find(function(t){return t.id===source.value});
-  }
-  sources();ui.body.appendChild(field("Checklist to add *",source,"Saved groups are copied into the rule. Updating or deleting the original group leaves this SOP intact."));ui.body.appendChild(preview);
-  var save=el("button","btn btn-p sp","Save rule");
-  function draft(){return {name:name.value,platform:platform.value,format:format.value,source:source.value}}
-  var original=JSON.stringify(draft());
+  function named(nodes){return nodes.length>0&&nodes.every(function(n){return !!n.title.trim()&&(!kids(n).length||named(kids(n)))})}
   function validate(){
-    var selected=selection(),valid=!!name.value.trim()&&!!(platform.value||format.value)&&!!selected&&!!selected.nodes.length&&
-      (source.value!=="suggested"||!!format.value)&&treeDepth(selected.nodes)<=MAXDEPTH;
-    save.disabled=!valid||!S.sopReady;
-    preview.textContent=!(platform.value||format.value)?"Choose at least a platform or format.":source.value==="suggested"&&!format.value?"Choose a format to use its suggested checklist.":selected?
-      leaves(selected.nodes).length+" steps: "+selected.nodes.map(function(n){return n.title}).join(" · "):"Choose a saved group.";
+    var duplicate=sopNameTaken(d.name,rule&&rule.id),valid=!!d.name.trim()&&d.name.trim().length<=100&&d.platform&&d.format&&named(d.nodes)&&treeDepth(d.nodes)<=MAXDEPTH;
+    hint.hidden=!duplicate;hint.textContent="An SOP with this name already exists. Choose a unique name.";
+    save.disabled=!valid||duplicate||!S.sopReady||S.templatesLoading||!!S.templateError;suggested.disabled=!d.format;
   }
-  name.oninput=validate;platform.onchange=validate;source.onchange=validate;format.onchange=function(){sources();validate()};
-  save.onclick=function(){
-    validate();if(save.disabled)return;
-    var selected=selection(),payload={name:name.value.trim(),platform:platform.value,format:format.value,enabled:rule?rule.enabled:true,
-      nodes:copyNodes(selected.nodes),anchorDate:selected.anchorDate||"",createdAt:rule&&rule.createdAt||new Date().toISOString()};
-    if(rule)payload.id=rule.id;
-    runDialogSave(ui,save,function(){return storeSopRule(payload)},function(){onSaved();toast("SOP rule saved")});
-  };
-  ui.foot.appendChild(save);validate();overlay(ui.node,function(){return JSON.stringify(draft())!==original},true);
+  name.oninput=function(){d.name=name.value;validate()};platform.onchange=function(){d.platform=platform.value;validate()};format.onchange=function(){d.format=format.value;var f=formatById(d.format);if(!f||f.angles.indexOf(d.angle)<0)d.angle="";drawTopic();validate()};
+  save.onclick=function(){validate();if(save.disabled)return;var payload={name:d.name,platform:d.platform,format:d.format,angle:d.angle,nodes:copyNodes(d.nodes),anchorDate:d.anchorDate,enabled:rule&&!rule.legacyId?rule.enabled:true,createdAt:rule&&rule.createdAt||new Date().toISOString()};if(rule){payload.id=rule.id;if(rule.legacyId)payload.legacyId=rule.legacyId}
+    runDialogSave(ui,save,function(){return storeSopRule(payload)},function(){if(onSaved)onSaved();toast("SOP saved")});
+  };ui.foot.appendChild(save);drawTopic();drawBuilder();validate();overlay(ui.node,function(){return JSON.stringify(d)!==initial},true);
+}
+function openTemplatePicker(a,parentId,depth,onAdd){
+  var ui=actionDialog("Browse SOPs","Choose an SOP checklist to add. Its existing subtasks and progress are kept.");
+  allSopRules().forEach(function(rule){var row=el("div","template-row"),text=el("div");text.appendChild(el("strong",null,sopDisplayName(rule)));text.appendChild(el("p","hint",sopCondition(rule)));row.appendChild(text);
+    var add=el("button","btn btn-o","Add "+leaves(sopNodes(rule)).length+" subtasks");add.disabled=treeDepth(sopNodes(rule))+depth>MAXDEPTH||(a.appliedSopRules||[]).indexOf(rule.id)>=0;
+    add.onclick=function(){var offset=rule.anchorDate&&a.dueDate?daysBetween(rule.anchorDate,a.dueDate):0;closeOverlay(true);onAdd(copyNodes(sopNodes(rule),offset),parentId,rule.id)};row.appendChild(add);ui.body.appendChild(row);
+  });overlay(ui.node,null,true);
+}
+function checklistTools(a,onChange){
+  var bar=el("div","reuse-tools"),browse=el("button","tpl-btn","Browse SOPs");browse.onclick=function(){openTemplatePicker(a,null,0,function(nodes,parent,ruleId){saveSubtaskWithSops(a,null,{},[ruleId],true).then(onChange).catch(function(e){toast(e.userMessage||msgFor(e))})})};bar.appendChild(browse);return bar;
+}
+function subReuseActions(a,s,depth,onChange){
+  var menu=el("details","reuse-menu"),summary=el("summary",null,"⋯");summary.title="Subtask actions";summary.setAttribute("aria-label","Actions for "+s.title);menu.appendChild(summary);
+  function action(label,fn){var b=el("button",null,label);b.onclick=function(){menu.open=false;fn()};menu.appendChild(b)}
+  action("Duplicate",function(){var copy=copyNodes([s])[0];copy.title+=" (copy)";a.subtasks=insertAfter(a.subtasks,s.id,copy);onChange();toast("Subtask duplicated")});
+  if(depth<MAXDEPTH-1)action("Browse SOPs to add inside",function(){openTemplatePicker(a,s.id,depth+1,function(nodes,parent,ruleId){saveSubtaskWithSops(a,s.id,{},[ruleId],true).then(function(saved){a.subtasks=saved.subtasks;S.expanded["n"+s.id]=true;onChange()}).catch(function(e){toast(e.userMessage||msgFor(e))})})});return menu;
 }
 
 /* One creative, several placements. Each placement is a different design,
@@ -1111,7 +1176,7 @@ function subAddInput(a,parentId,ph){
     var v=ai.value.trim();if(!v)return;
     ai.value="";S.focusAdd=key;
     if(parentId)S.expanded["n"+parentId]=true;
-    saveSubs(a,addChild(a.subtasks||[],parentId,newNode(v,"")));
+    var n=newNode(v,"");saveSubs(a,addChild(a.subtasks||[],parentId,n)).then(function(){offerSubtaskSop(a,n.id)});
   };
   return ai;
 }
@@ -1229,17 +1294,18 @@ function quickAdd(c){
   var go=el("button","btn btn-p q-go","Add");
   go.disabled=true;
   ti.oninput=function(){go.disabled=!ti.value.trim()||!S.sopReady};
-  var sopHint=el("p","hint quick-sop");
+  var sopHint=el("div","sop-preview quick-sop"),selectedSops=[];
   function drawQuickSop(){
-    var f=formatById(fs.value),matches=sopMatches({type:fs.value,platforms:f?f.platforms:[]});
-    sopHint.hidden=!matches.length;sopHint.textContent="Automatic SOP: "+matches.map(function(r){return r.name}).join(", ");
+    var f=formatById(fs.value),angle=angleBox.querySelector("select"),context={type:fs.value,platforms:f?f.platforms:[],angle:angle?angle.value:""};
+    selectedSops=selectedSops.filter(function(id){return sopMatches(context).some(function(r){return r.id===id})});
+    renderSopNudge(sopHint,context,{children:[]},0,function(id,add){selectedSops=selectedSops.filter(function(x){return x!==id});if(add)selectedSops.push(id);drawQuickSop()},selectedSops);
   }
   function drawAngle(keep){
     clear(angleBox);
     var f=formatById(fs.value);
     if(!f||!f.angles.length)return;
     var s=dropdown(f.angles.map(function(x){return[x,x]}),keep?(la.angle||""):"","Topic…");
-    s.setAttribute("aria-label","Topic");
+    s.setAttribute("aria-label","Topic");s.onchange=drawQuickSop;
     angleBox.appendChild(s);
   }
   fs.onchange=function(){drawAngle(false);drawQuickSop()};
@@ -1253,7 +1319,7 @@ function quickAdd(c){
     var payload=applySopRules({campaignId:c.id,title:t,type:fs.value,angle:ang,cta:"",
       platforms:f?f.platforms.slice():[],
       dueDate:dt.value||TODAY,dueTime:tm.value,owner:"",status:"Not started",description:"",
-      keywords:[],script:"",subtasks:[],createdAt:new Date().toISOString()});
+      keywords:[],script:"",subtasks:[],createdAt:new Date().toISOString()},selectedSops);
     db.collection("activities").add(payload)
       .then(function(){S.focusAdd="c"+c.id;render();toast("Added to "+c.name)})
       .catch(function(e){go.disabled=false;go.textContent="Add";toast(msgFor(e))});
@@ -1543,64 +1609,40 @@ function subtaskEditButton(a,s,onSaved){
   edit.onclick=function(){openSubtask(a,s,onSaved)};return edit;
 }
 function openSubtask(a,s,onSaved,focusDeadline){
-  var original={title:s.title||"",description:s.description||"",owner:s.owner||"",due:s.due||"",platform:s.platform||"",kind:s.kind||""};
-  var draft=Object.assign({},original),saving=false;
+  var original={title:s.title||"",description:s.description||"",owner:s.owner||"",due:s.due||"",platform:s.platform||"",kind:s.kind||"",type:s.type||"",angle:s.angle||""};
+  var draft=Object.assign({},original),saving=false,selected=[],location=subtaskLocation(a,s.id),parent=location?location.parent:{platforms:a.platforms||[],type:a.type||"",angle:a.angle||""};
   var dialog=el("div","modal subtask-modal");dialog.setAttribute("role","dialog");dialog.setAttribute("aria-label","Edit subtask");
   var head=el("div","p-head");head.appendChild(el("h2",null,"Subtask details"));
   var close=el("button","x","✕");close.onclick=closeOverlay;head.appendChild(close);dialog.appendChild(head);
-  var body=el("div","p-body");dialog.appendChild(body);
-  body.appendChild(el("p","form-intro","Part of "+a.title+(kids(s).length?". This group contains other checklist items.":".")));
-  var title=input("text",draft.title,"What needs to be done?");title.required=true;
-  title.oninput=function(){draft.title=title.value;validate()};body.appendChild(field("Subtask name *",title));
-  var description=el("textarea","subtask-description-input");description.value=draft.description;description.rows=5;
-  description.placeholder="Add instructions, context, links or acceptance criteria…";
-  description.oninput=function(){draft.description=description.value};
-  body.appendChild(field("Description (optional)",description,"Include anything the person doing this task needs to know."));
-  var planning=el("div","f2"),date=input("date",draft.due);
-  if(focusDeadline)date.autofocus=true;
-  date.oninput=function(){draft.due=date.value};planning.appendChild(field("Deadline (optional)",date));
-  planning.appendChild(field("Owner (optional)",ownerPicker(draft.owner,function(id){draft.owner=id})));body.appendChild(planning);
-  var details=disclosure("More details","Platform & type");
-  var platform=dropdown(PLATFORMS.map(function(p){return[p[0],p[0]]}),draft.platform,"Not set");
-  platform.onchange=function(){draft.platform=platform.value};details.body.appendChild(field("Platform",platform));
-  var kind=dropdown(SUBKINDS.map(function(k){return[k,k]}),draft.kind,"Not set");
-  kind.onchange=function(){draft.kind=kind.value};details.body.appendChild(field("Type",kind));body.appendChild(details.node);
+  var body=el("div","p-body");dialog.appendChild(body);body.appendChild(el("p","form-intro","Part of "+a.title+". Conditions inherit from the parent unless you change them."));
+  var title=input("text",draft.title,"What needs to be done?");title.required=true;title.oninput=function(){draft.title=title.value;validate()};body.appendChild(field("Subtask name *",title));
+  var platform=dropdown(PLATFORMS.map(function(p){return[p[0],p[0]]}),draft.platform,"Use parent platform"),format=formatSelect(draft.type,"Use parent format"),topicWrap=el("div"),nudge=el("div","sop-preview");
+  var conditions=disclosure("SOP conditions",sopCondition({platform:parent.platforms.join(" + "),format:parent.type,angle:parent.angle}));conditions.node.open=!!draft.type||!!draft.angle;conditions.body.appendChild(field("Platform",platform));conditions.body.appendChild(field("Content format",format));conditions.body.appendChild(topicWrap);body.appendChild(conditions.node);body.appendChild(nudge);
+  function context(){return {platforms:draft.platform?[draft.platform]:parent.platforms,type:draft.type||parent.type,angle:draft.angle||(!draft.type||draft.type===parent.type?parent.angle:"")}}
+  function drawNudge(){
+    var effective=context();conditions.node.querySelector("summary small").textContent=sopCondition({platform:effective.platforms.join(" + "),format:effective.type,angle:effective.angle});
+    var matches=sopMatches(effective);selected=selected.filter(function(id){return matches.some(function(r){return r.id===id})});
+    renderSopNudge(nudge,context(),s,location?location.depth+1:1,function(id,add){selected=selected.filter(function(x){return x!==id});if(add)selected.push(id);drawNudge()},selected);
+  }
+  function drawTopic(){clear(topicWrap);var topic=sopTopicSelect(draft.type||parent.type,draft.angle,"Use parent topic");topic.onchange=function(){draft.angle=topic.value;drawNudge()};topicWrap.appendChild(field("Topic / category",topic))}
+  platform.onchange=function(){draft.platform=platform.value;drawNudge()};format.onchange=function(){draft.type=format.value;draft.angle="";drawTopic();drawNudge()};drawTopic();drawNudge();
+  var description=el("textarea","subtask-description-input");description.value=draft.description;description.rows=4;description.placeholder="Instructions, links or acceptance criteria…";description.oninput=function(){draft.description=description.value};body.appendChild(field("Description (optional)",description));
+  var planning=el("div","f2"),date=input("date",draft.due);if(focusDeadline)date.autofocus=true;date.oninput=function(){draft.due=date.value};planning.appendChild(field("Deadline (optional)",date));planning.appendChild(field("Owner (optional)",ownerPicker(draft.owner,function(id){draft.owner=id})));body.appendChild(planning);
+  var kind=dropdown(SUBKINDS.map(function(k){return[k,k]}),draft.kind,"Not set");kind.onchange=function(){draft.kind=kind.value};conditions.body.appendChild(field("Work type (optional)",kind,"The production step, such as Script, Edit or Thumbnail."));body.insertBefore(planning,conditions.node);body.insertBefore(description.parentElement,conditions.node);
   var err=el("p","hint err");err.hidden=true;err.setAttribute("role","alert");body.appendChild(err);
-  var foot=el("div","p-foot"),note=el("p","required-note","Save to update this subtask. Other checklist items stay as they are.");
-  foot.appendChild(note);
-  var cancel=el("button","btn btn-o","Cancel");cancel.onclick=function(){closeOverlay()};foot.appendChild(cancel);
-  var save=el("button","btn btn-p sp","Save subtask");foot.appendChild(save);dialog.appendChild(foot);
+  var foot=el("div","p-foot");foot.appendChild(el("p","required-note","Save to update this subtask and add any selected SOP steps."));
+  var cancel=el("button","btn btn-o","Cancel");cancel.onclick=closeOverlay;foot.appendChild(cancel);var save=el("button","btn btn-p sp","Save subtask");foot.appendChild(save);dialog.appendChild(foot);
   function validate(){save.disabled=saving||!draft.title.trim()||!writable();return !save.disabled}
   save.onclick=function(){
-    if(!validate())return;
-    var changes={};Object.keys(original).forEach(function(key){var value=key==="title"?draft[key].trim():draft[key];if(value!==original[key])changes[key]=value});
-    if(!Object.keys(changes).length){closeOverlay(true);return}
-    saving=true;validate();save.textContent="Saving…";err.hidden=true;cancel.disabled=true;close.disabled=true;
-    body.querySelectorAll("input,textarea,select,button").forEach(function(control){control.disabled=true});
-    var editingState=overlayState;editingState.busy=true;
-    var savedActivity;
-    var write=wq.then(function(){
-      var current=S.activities.filter(function(item){return item.id===a.id})[0]||a;
-      if(!nodeById(current.subtasks,s.id)){var missing=new Error("Subtask no longer exists");missing.code="not-found";throw missing}
-      var updated=patchNode(current.subtasks,s.id,changes);
-      return db.doc("activities/"+a.id).update({subtasks:updated}).then(function(){current.subtasks=updated;a.subtasks=updated;savedActivity=current});
-    });
-    wq=write.catch(function(){});
-    write.then(function(){
-      editingState.busy=false;
-      if(overlayState===editingState)closeOverlay(true);
-      if(onSaved)onSaved(savedActivity);
-      render();
-      if(overlayState){var savedNote=overlayState.node.querySelector(".autosave-note");if(savedNote)savedNote.textContent="Subtask saved. Status and checklist changes save automatically."}
-      else toast("Subtask saved");
-    }).catch(function(e){
-      editingState.busy=false;saving=false;validate();save.textContent="Save subtask";cancel.disabled=false;close.disabled=false;
-      body.querySelectorAll("input,textarea,select,button").forEach(function(control){control.disabled=false});
-      err.textContent=msgFor(e);err.hidden=false;
+    if(!validate())return;var changes={};Object.keys(original).forEach(function(key){var value=key==="title"?draft[key].trim():draft[key];if(value!==original[key])changes[key]=value});
+    if(!Object.keys(changes).length&&!selected.length){closeOverlay(true);return}
+    saving=true;validate();save.textContent="Saving…";err.hidden=true;cancel.disabled=true;close.disabled=true;body.querySelectorAll("input,textarea,select,button").forEach(function(control){control.disabled=true});
+    var editingState=overlayState;editingState.busy=true;var write=saveSubtaskWithSops(a,s.id,changes,selected);wq=write.catch(function(){});
+    write.then(function(saved){editingState.busy=false;if(overlayState===editingState)closeOverlay(true);if(onSaved)onSaved(saved);render();toast("Subtask saved")}).catch(function(e){
+      editingState.busy=false;saving=false;validate();save.textContent="Save subtask";cancel.disabled=false;close.disabled=false;body.querySelectorAll("input,textarea,select,button").forEach(function(control){control.disabled=false});drawNudge();err.textContent=e.userMessage||msgFor(e);err.hidden=false;
     });
   };
-  clear($("toasts"));
-  validate();overlay(dialog,function(){return JSON.stringify(draft)!==JSON.stringify(original)},true);
+  clear($("toasts"));validate();overlay(dialog,function(){return JSON.stringify(draft)!==JSON.stringify(original)||selected.length>0},true);
 }
 
 /* ─── activity panel ────────────────────────────────────── */
@@ -1611,7 +1653,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
   var live=S.campaigns.filter(function(c){return c.status==="Live"});
   var d={
     title:a?a.title:(pf.title||""),
-    campaignId:a?a.campaignId:(presetCampaign||(live.length===1?live[0].id:(S.campaigns.length===1?S.campaigns[0].id:""))),
+    campaignId:a?a.campaignId:(presetCampaign||S.filters.campaign||(live.length===1?live[0].id:(S.campaigns.length===1?S.campaigns[0].id:""))),
     type:a?(a.type||""):(pf.type||""),
     angle:a?(a.angle||""):(pf.angle||""),
     cta:a?(a.cta||""):"",
@@ -1621,7 +1663,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
     owner:a?(a.owner||""):"",
     description:a?(a.description||""):"",
     keywords:a?(a.keywords||[]).slice():[],
-    script:a?(a.script||""):"",useTemplate:false,templateNodes:[],templateAnchor:presetDate||TODAY,repeat:{unit:"",count:1}
+    script:a?(a.script||""):"",manualSops:[],selectedSopIds:[],templateAnchor:presetDate||TODAY,repeat:{unit:"",count:1}
   };
   var initial=JSON.stringify(d);
   /* true while the platforms were filled in by the format, not by the user */
@@ -1651,9 +1693,9 @@ function openActivity(a,presetDate,presetCampaign,preset){
 
   var fmtSel=formatSelect(d.type,"Not set");fmtSel.id="act-format";
   body.appendChild(field("Format",fmtSel));
-  var contentDetails=disclosure("Content details","Topic, platforms, notes & keywords");
+  var contentDetails=disclosure("Content details","Platforms, notes & keywords");
   var angleWrap=el("div"),ctaWrap=el("div");
-  contentDetails.body.appendChild(angleWrap);contentDetails.body.appendChild(ctaWrap);
+  body.appendChild(angleWrap);contentDetails.body.appendChild(ctaWrap);
   function drawAngle(){
     clear(angleWrap);
     var f=formatById(d.type);
@@ -1661,8 +1703,8 @@ function openActivity(a,presetDate,presetCampaign,preset){
     if(!f||!f.angles.length)return;
     var s=dropdown(f.angles.map(function(x){return[x,x]}),d.angle,"Not set");
     s.id="act-angle";
-    s.onchange=function(){d.angle=s.value};
-    angleWrap.appendChild(field("Topic",s,"What this one is about, within "+f.label.toLowerCase()+"."));
+    s.onchange=function(){d.angle=s.value;if(sopPreview)drawSopPreview()};
+    angleWrap.appendChild(field("Topic / category",s,"Choose the topic to find a more specific SOP."));
   }
   function drawCta(){
     clear(ctaWrap);
@@ -1685,7 +1727,6 @@ function openActivity(a,presetDate,presetCampaign,preset){
       for(var i=0;i<bs.length;i++)bs[i].setAttribute("aria-pressed",d.platforms.indexOf(bs[i].textContent)>=0?"true":"false");
     }
     drawAngle();drawCta();
-    if(templateHint)templateHint.textContent=templateDescription();
     if(sopPreview)drawSopPreview();
   };
   drawAngle();drawCta();
@@ -1797,7 +1838,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
         ti.onchange=function(){
           var v=ti.value.trim();
           if(!v){ti.value=s.title;toast("Give this item a name, or use Remove to delete it.");return}
-          patchSub(s.id,{title:v||s.title});
+          patchSub(s.id,{title:v||s.title});if(v)offerSubtaskSop(a,s.id,function(saved){a.subtasks=saved.subtasks;drawSubs(null)});
         };
         r.appendChild(ti);
         r.appendChild(subtaskEditButton(a,s,function(current){a.subtasks=current.subtasks;drawSubs(null)}));
@@ -1856,26 +1897,13 @@ function openActivity(a,presetDate,presetCampaign,preset){
         if(e.key!=="Enter")return;
         e.preventDefault();
         var v=ai.value.trim();if(!v)return;
-        a.subtasks=(a.subtasks||[]).concat([newNode(v,"")]);
-        persistSubs(a);render();drawSubs("add");
+        var fresh=newNode(v,"");a.subtasks=(a.subtasks||[]).concat([fresh]);
+        persistSubs(a).then(function(){offerSubtaskSop(a,fresh.id,function(saved){a.subtasks=saved.subtasks;drawSubs(null)})});render();drawSubs("add");
       };
       sbox.appendChild(ai);
       if(writable()){
         sbox.appendChild(checklistTools(a,function(){persistSubs(a);render();drawSubs(null)}));
-        var def=STEPS[d.type]||["Script","Edit","Review"];
-        var tb=el("button","tpl-btn","+ Add the usual breakdown"+(d.type?" for "+d.type.toLowerCase():""));
-        tb.type="button";
-        tb.title=def.map(function(x){return typeof x==="string"?x:x.t}).join(" · ");
-        tb.onclick=function(){
-          var have={};
-          (a.subtasks||[]).forEach(function(s){have[(s.title||"").toLowerCase()]=1});
-          var fresh=buildSteps(def).filter(function(n){return !have[(n.title||"").toLowerCase()]});
-          if(!fresh.length){toast("That breakdown is already here");return}
-          a.subtasks=(a.subtasks||[]).concat(fresh);
-          persistSubs(a);render();drawSubs(null);
-          toast("Added "+fresh.length+" item"+(fresh.length>1?"s":""));
-        };
-        sbox.appendChild(tb);
+
       }
       if(!writable()){
         var ff=sbox.querySelectorAll("input,button,select");
@@ -1892,42 +1920,28 @@ function openActivity(a,presetDate,presetCampaign,preset){
     var checklist=disclosure("Checklist",subDone(a)+" of "+subTotal(a)+" items complete");checklist.node.open=true;
     checklist.body.appendChild(sbox);body.appendChild(checklist.node);
   }else{
-    var checklist=disclosure("Checklist","Start with a suggested set of steps");
-    var checkLabel=el("label","check-label"),templateToggle=input("checkbox");templateToggle.id="act-template";
-    templateToggle.onchange=function(){d.useTemplate=templateToggle.checked};
-    checkLabel.appendChild(templateToggle);checkLabel.appendChild(document.createTextNode("Add suggested checklist"));
-    var templateHint=el("p","hint",templateDescription());
-    checklist.body.appendChild(checkLabel);checklist.body.appendChild(templateHint);body.appendChild(checklist.node);
-    var savedList=el("div","ps-list"),addSaved=el("button","tpl-btn","+ Add saved group");
+    var checklist=disclosure("Checklist","Choose an SOP checklist or add individual steps after creating the activity");
+    var savedList=el("div","ps-list"),browse=el("button","tpl-btn","Browse SOPs");
     function drawSaved(){
-      clear(savedList);d.templateNodes.forEach(function(n){
-        var row=el("div","template-row");row.appendChild(el("span",null,n.title+(kids(n).length?" · "+leaves([n]).length+" steps":"")));
-        var remove=el("button","text-button","Remove");remove.onclick=function(){d.templateNodes=d.templateNodes.filter(function(x){return x.id!==n.id});drawSaved()};row.appendChild(remove);savedList.appendChild(row);
+      clear(savedList);d.manualSops.forEach(function(selection){
+        var row=el("div","template-row"),rule=allSopRules().find(function(r){return r.id===selection.ruleId});
+        row.appendChild(el("span",null,(rule?sopDisplayName(rule):"Selected SOP")+" · "+leaves(selection.nodes).length+" subtasks"));
+        var remove=el("button","text-button","Remove");remove.onclick=function(){d.manualSops=d.manualSops.filter(function(x){return x!==selection});drawSaved();drawSopPreview()};row.appendChild(remove);savedList.appendChild(row);
       });
     }
-    addSaved.onclick=function(){openTemplatePicker({dueDate:d.templateAnchor},null,0,function(nodes){d.templateNodes=d.templateNodes.concat(nodes);drawSaved()})};
-    checklist.body.appendChild(addSaved);checklist.body.appendChild(savedList);
+    browse.onclick=function(){openTemplatePicker({dueDate:d.templateAnchor,appliedSopRules:d.manualSops.map(function(x){return x.ruleId})},null,0,function(nodes,parent,id){d.manualSops.push({ruleId:id,nodes:nodes});drawSaved();drawSopPreview()})};
+    checklist.body.appendChild(browse);checklist.body.appendChild(savedList);body.appendChild(checklist.node);
   }
   var sopPreview=el("div","sop-preview");checklist.body.prepend(sopPreview);
   function drawSopPreview(){
-    clear(sopPreview);
-    var current=isNew?null:S.activities.find(function(x){return x.id===a.id})||a;
-    var matches=sopMatches(d).filter(function(rule){return !current||(current.appliedSopRules||[]).indexOf(rule.id)<0});
-    sopPreview.hidden=!matches.length;
-    if(matches.length){
-      sopPreview.appendChild(el("strong",null,isNew?"Added automatically by SOP rules":"SOP steps will be added when you save"));
-      matches.forEach(function(rule){
-        sopPreview.appendChild(el("p",null,rule.name));
-        function steps(nodes){var list=el("ul","sop-steps");nodes.forEach(function(n){var item=el("li",null,n.title);if(kids(n).length)item.appendChild(steps(kids(n)));list.appendChild(item)});return list}
-        sopPreview.appendChild(steps(sopNodes(rule)));
-      });
-      sopPreview.appendChild(el("p","hint","Existing steps are kept. Matching steps are reused to avoid duplicates."));
-      if(isNew)checklist.node.open=true;
-    }
+    var current=isNew?null:S.activities.find(function(x){return x.id===a.id})||a,matches=sopMatches(d);
+    d.selectedSopIds=d.selectedSopIds.filter(function(id){return matches.some(function(r){return r.id===id})});
+    var target={children:current?current.subtasks:[],appliedSopRules:(current?current.appliedSopRules||[]:[]).concat(d.manualSops.map(function(x){return x.ruleId}))};
+    renderSopNudge(sopPreview,d,target,0,function(id,add){d.selectedSopIds=d.selectedSopIds.filter(function(x){return x!==id});if(add)d.selectedSopIds.push(id);drawSopPreview()},d.selectedSopIds);
+    if(isNew&&!sopPreview.hidden)checklist.node.open=true;
   }
   drawSopPreview();
   body.appendChild(scriptSection.node);
-  function templateDescription(){return (STEPS[d.type]||["Script","Edit","Review"]).map(function(s){return typeof s==="string"?s:s.t}).join(" · ")}
 
   var foot=el("div","p-foot");
   var err=el("div","hint err");err.hidden=true;
@@ -1989,13 +2003,13 @@ function openActivity(a,presetDate,presetCampaign,preset){
       platforms:d.platforms,dueDate:d.dueDate,dueTime:d.dueTime,owner:d.owner,
       description:d.description.trim(),keywords:d.keywords,script:d.script};
     if(isNew){
-      payload.status="Not started";payload.assets={};payload.subtasks=(d.useTemplate?buildSteps(STEPS[d.type]||["Script","Edit","Review"]):[]).concat(copyNodes(d.templateNodes,daysBetween(d.templateAnchor,d.dueDate)));
+      payload.status="Not started";payload.assets={};payload.subtasks=copyNodes(d.manualSops.reduce(function(nodes,selection){return nodes.concat(selection.nodes)},[]),daysBetween(d.templateAnchor,d.dueDate));payload.appliedSopRules=d.manualSops.map(function(x){return x.ruleId});
       payload.createdAt=new Date().toISOString();
-      payload=applySopRules(payload);
+      payload=applySopRules(payload,d.selectedSopIds);
       writeActivityCopies(payload,d.repeat).then(function(){closeOverlay(true);toast(d.repeat.unit?d.repeat.count+" recurring activities created":"Activity added to "+fmtLong(d.dueDate))})
         .catch(showErr);
     }else{
-      saveActivityWithSops(a.id,payload).then(function(){closeOverlay(true);toast("Changes saved")}).catch(showErr);
+      saveActivityWithSops(a.id,payload,d.selectedSopIds).then(function(){closeOverlay(true);toast("Changes saved")}).catch(showErr);
     }
   }
   validate();
@@ -2197,9 +2211,9 @@ function showGate(kind,extra){
 
 function startData(){
   subs.forEach(function(f){try{f()}catch(e){}});subs=[];
-  S.loading=true;S.err=null;S.sopReady=false;S.sopRules=[];pending=4;render();
+  S.loading=true;S.err=null;S.sopReady=false;S.sopRules=[];pending=5;render();
   S.templates=[];S.templatesLoading=true;S.templateError="";
-  var waiting={campaigns:true,activities:true,users:true,sopRules:true};
+  var waiting={campaigns:true,activities:true,users:true,sopRules:true,subtaskTemplates:true};
   function received(key,snap){
     if(waiting[key]&&(!snap||!snap.metadata.fromCache)){
       waiting[key]=false;settled();
@@ -2225,12 +2239,12 @@ function startData(){
     S.sopRules=snap.docs.map(function(d){return Object.assign({},d.data(),{id:d.id})});S.sopReady=true;
     received("sopRules",snap);render();
   },onErr));
-  subs.push(db.collection("subtaskTemplates").onSnapshot(function(snap){
+  subs.push(db.collection("subtaskTemplates").onSnapshot({includeMetadataChanges:true},function(snap){
     S.templates=snap.docs.map(function(d){return Object.assign({},d.data(),{id:d.id})});
-    S.templatesLoading=false;S.templateError="";
+    S.templatesLoading=false;S.templateError="";received("subtaskTemplates",snap);render();
   },function(e){
     S.templatesLoading=false;S.templateError=e.code==="permission-denied"?
-      "Saved groups are unavailable. Publish the updated Firestore rules to enable shared reusable groups.":msgFor(e);
+      "The SOP library could not load existing checklists. Reload the page to try again.":msgFor(e);received("subtaskTemplates");
   }));
   /* the team roster, so owners resolve to real names */
   subs.push(db.collection("users").onSnapshot({includeMetadataChanges:true},function(snap){

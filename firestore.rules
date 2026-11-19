@@ -23,9 +23,22 @@ service cloud.firestore {
       allow read, write: if nprep();
     }
     match /subtaskTemplates/{templateId} {
-      allow read, write: if nprep();
+      allow read, update, delete: if nprep();
     }
     match /sopRules/{ruleId} {
+      function reservedName() {
+        return request.resource.data.nameKey is string
+          && getAfter(/databases/$(database)/documents/sopNameClaims/$(request.resource.data.nameKey)).data.sopId == ruleId
+          && getAfter(/databases/$(database)/documents/sopNameClaims/$(request.resource.data.nameKey)).data.name == request.resource.data.name;
+      }
+      allow read, delete: if nprep();
+      allow create: if nprep() && reservedName();
+      allow update: if nprep() && (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['enabled', 'archived'])
+        || reservedName()
+      );
+    }
+    match /sopNameClaims/{nameKey} {
       allow read, write: if nprep();
     }
 
