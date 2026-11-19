@@ -37,6 +37,26 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
 - Every displayed subtask shows its deadline, or **Set deadline** when no date
   has been assigned. Select the deadline to edit it; overdue deadlines are
   highlighted until the item is complete.
+- Use **Save checklist as reusable group**, or a subtask's **⋯ → Save as
+  reusable group**, to save your own steps. **Add saved group** inserts them
+  into an existing or new activity; **Add saved group inside** inserts them
+  beneath a subtask when the three-level nesting limit allows it. Saved groups
+  are shared with the team. Deleting a saved group leaves existing checklists
+  intact. Owners, descriptions, platforms and types are kept; deadlines shift
+  relative to the destination activity's due date and completion resets.
+- **Duplicate** on a campaign copies all its activities and nested subtasks.
+  Activity details offer **Duplicate activity**, and every subtask's **⋯** menu
+  offers **Duplicate**, including groups and the deepest nested items. Copies
+  have independent IDs, keep owners and content, reset progress, and clear
+  activity output assets. Choose a new start/due date to shift all deadlines
+  together. Campaign copies start in Planning; activity copies in Not started.
+- New activity forms offer **Repeat activity** with daily, weekly or monthly
+  scheduling and 2–52 total occurrences. Existing activity details offer
+  **Repeat activity** to create a new series from saved details. Occurrences
+  are created together immediately and can be edited or deleted independently;
+  this is a finite series, with no background scheduler or series-wide edits.
+  Monthly repeats preserve the original day where possible and use the last
+  day in shorter months. Campaign duplication is atomic, with up to 499 activities.
 - Form labels, dialog focus, view-tab keyboard navigation and visible focus
   indicators support keyboard use. Optional fields are identified in the forms.
 
@@ -88,16 +108,23 @@ hosted — it is not on this Vercel account, so the record has to be added there
 
 ## Data
 
-Two collections, both flat:
+Collections:
 
 - `campaigns/{id}` — name, goal, startDate, endDate, owner, status, colour
 - `activities/{id}` — campaignId, title, type, angle, cta, platforms[],
   dueDate, dueTime, owner, status, description, keywords[], script,
   subtasks[] (nested, each with platform, kind, owner, due, children[])
 - `users/{uid}` — written on sign-in so owner pickers show real names
+- `subtaskTemplates/{id}` — shared reusable groups: name, nodes[], anchorDate,
+  createdAt. Publish the updated `firestore.rules` to enable this collection
+  before using saved groups. Existing task and campaign operations continue
+  to work if template permissions have not yet been published.
+
+Repeated activities also carry `repeat` metadata with a series ID, frequency,
+occurrence index and count. Duplicating an activity starts an independent copy.
 
 Subtasks live inside their activity rather than in their own collection: one
-document per activity keeps reads to three listeners and makes deleting an
+document per activity keeps the checklist in one read and makes deleting an
 activity delete its whole breakdown.
 
 ## Running it locally
@@ -109,3 +136,11 @@ npx serve .
 ```
 
 Then add `http://localhost:3000` to Firebase's authorized domains.
+
+## Checking changes
+
+`node --check app.js` checks syntax. `node tests/reuse.test.cjs` checks copy
+independence, progress resets, date shifts and recurrence boundaries. With
+`playwright` installed or available on `NODE_PATH`, `node tests/reuse-ui.cjs`
+checks the browser flows in Chrome, including mobile layout and failed-write
+recovery. The browser test uses an in-memory database and never contacts Firebase.

@@ -443,6 +443,18 @@ button:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid var
 .chip .t span{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .chip .m{flex-wrap:wrap;gap:5px}
 .status-label{font-size:10px;color:var(--text-2)}
+.reuse-tools{display:flex;align-items:center;gap:8px 16px;flex-wrap:wrap}
+.reuse-tools .btn{font-size:12px;padding:8px 12px}
+.reuse-menu{position:relative;flex:none;font-size:12px;border:1px solid var(--line);border-radius:7px;background:var(--surface)}
+.reuse-menu summary{padding:3px 9px;cursor:pointer;list-style:none;font-weight:600}
+.reuse-menu summary::-webkit-details-marker{display:none}
+.reuse-menu[open]{flex-basis:100%;padding:4px;display:flex;flex-wrap:wrap}
+.reuse-menu button{padding:8px 10px;text-align:left;border-radius:5px;color:var(--brand)}
+.reuse-menu button:hover{background:var(--ice)}
+.template-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;border:1px solid var(--line);border-radius:9px;padding:12px;font-size:12px}
+.template-row>div:first-child,.template-row>span:first-child{flex:1 1 160px;min-width:0;overflow-wrap:anywhere}
+.template-row .btn{font-size:11px;padding:8px 12px}
+.repeat-detail{display:flex;flex-direction:column;gap:10px}
 @media (hover:none){.sub-x,.card .top .x,.cell .add{opacity:1}select.inl.empty{opacity:1;max-width:96px;padding:3px 8px}.mark,.sub-chk{min-width:28px;min-height:28px}}
 @media (max-width:600px){
   .subtask-modal .f2{grid-template-columns:1fr}

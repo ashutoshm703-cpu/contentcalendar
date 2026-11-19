@@ -22,6 +22,9 @@ service cloud.firestore {
     match /activities/{activityId} {
       allow read, write: if nprep();
     }
+    match /subtaskTemplates/{templateId} {
+      allow read, write: if nprep();
+    }
 
     // The roster, so owner names resolve. You may only write your own row.
     match /users/{uid} {

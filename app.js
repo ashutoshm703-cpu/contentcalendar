@@ -112,7 +112,7 @@ var S={campaigns:[],activities:[],view:"calendar",calView:"next7",anchor:"",y:0,
   filters:{campaign:"",platform:"",format:"",owner:"",status:""},
   loading:true,stale:false,err:null,canWrite:null,open:null,expanded:{},focusAdd:null,lastAdd:{},
   placeFor:null,showFilters:false,me:null,team:[],
-  profiles:{},dayMax:3,query:"",focusDay:""};
+  profiles:{},dayMax:3,query:"",focusDay:"",templates:[],templateError:"",templatesLoading:true};
 var db=null,U=null,phone=false;
 var $=function(id){return document.getElementById(id)};
 
@@ -633,6 +633,10 @@ function renderCampaigns(main){
     var ed=el("button","edit-campaign","Edit");ed.setAttribute("aria-label","Edit "+c.name);
     ed.onclick=function(){openCampaign(c)};
     if(writable())top.appendChild(ed);
+    if(writable()){
+      var duplicate=el("button","edit-campaign","Duplicate");duplicate.setAttribute("aria-label","Duplicate "+c.name);
+      duplicate.onclick=function(){openDuplicate(c,true,false)};top.appendChild(duplicate);
+    }
     card.appendChild(top);
     if(c.goal)card.appendChild(el("p","goal",c.goal));
     var meta=el("div","meta");
@@ -695,6 +699,10 @@ function renderCampaigns(main){
         }
         rm.onclick=function(){openActivity(a)};
         r.appendChild(rm);
+        if(writable()){
+          var dup=el("button","edit-campaign","Duplicate");dup.setAttribute("aria-label","Duplicate activity "+a.title);
+          dup.onclick=function(){openDuplicate(a,false,false)};r.appendChild(dup);
+        }
         aw.appendChild(r);
         if(S.expanded["a"+a.id])aw.appendChild(subtaskTree(a));
         list.appendChild(aw);
@@ -800,6 +808,145 @@ function persistSubs(a){
 }
 function saveSubs(a,arr){a.subtasks=arr;persistSubs(a);render()}
 
+/* Copies always have their own IDs and start with a fresh checklist. */
+function copyNodes(nodes,offset){
+  return (nodes||[]).map(function(n){return Object.assign({},n,{id:sid(),done:false,
+    due:n.due?addDays(n.due,offset||0):"",children:copyNodes(kids(n),offset)})});
+}
+function insertAfter(nodes,id,copy){
+  var out=[];
+  (nodes||[]).forEach(function(n){
+    out.push(kids(n).length?Object.assign({},n,{children:insertAfter(kids(n),id,copy)}):n);
+    if(n.id===id)out.push(copy);
+  });return out;
+}
+function treeDepth(nodes){return (nodes||[]).reduce(function(max,n){return Math.max(max,1+treeDepth(kids(n)))},0)}
+function copyActivity(a,date,campaignId){
+  var copy=Object.assign({},a);delete copy.id;
+  copy.campaignId=campaignId||a.campaignId;copy.dueDate=date;copy.status="Not started";copy.assets={};
+  copy.subtasks=copyNodes(a.subtasks,daysBetween(a.dueDate,date));copy.createdAt=new Date().toISOString();
+  delete copy.repeat;return copy;
+}
+function repeatDate(start,unit,index){
+  if(unit!=="monthly")return addDays(start,index*(unit==="weekly"?7:1));
+  var d=parseISO(start),day=d.getDate();d.setDate(1);d.setMonth(d.getMonth()+index);
+  d.setDate(Math.min(day,new Date(d.getFullYear(),d.getMonth()+1,0).getDate()));return iso(d);
+}
+function repeatForm(host,start,onChange,defaultUnit){
+  var unit=dropdown([["","Does not repeat"],["daily","Daily"],["weekly","Weekly"],["monthly","Monthly"]],defaultUnit||""),
+    count=input("number","4"),detail=el("div","repeat-detail"),hint=el("p","hint");
+  count.min="2";count.max="52";count.step="1";
+  host.appendChild(field("Repeat",unit));detail.appendChild(field("Total occurrences (2–52)",count));
+  detail.appendChild(hint);host.appendChild(detail);
+  function read(){return {unit:unit.value,count:unit.value?Number(count.value):1}}
+  function valid(){var r=read();return !r.unit||(Number.isInteger(r.count)&&r.count>=2&&r.count<=52)}
+  function refresh(){
+    detail.hidden=!unit.value;
+    hint.textContent=valid()&&start()?"Creates all occurrences now, through "+fmtLong(repeatDate(start(),unit.value,read().count-1))+". Each can be edited independently.":"Enter a whole number from 2 to 52.";
+    if(onChange)onChange();
+  }
+  unit.onchange=refresh;count.oninput=refresh;refresh();
+  return {read:read,valid:valid,refresh:refresh};
+}
+function writeActivityCopies(payload,repeat){
+  var batch=db.batch(),series=sid();
+  for(var i=0;i<repeat.count;i++){
+    var copy=copyActivity(payload,repeatDate(payload.dueDate,repeat.unit,i));
+    if(repeat.unit)copy.repeat={seriesId:series,unit:repeat.unit,index:i,count:repeat.count};
+    batch.set(db.collection("activities").doc(),copy);
+  }return batch.commit();
+}
+/* A small child dialog preserves any unfinished activity form underneath. */
+function actionDialog(title,intro){
+  var node=el("div","modal"),head=el("div","p-head"),body=el("div","p-body"),foot=el("div","p-foot"),error=el("p","hint err");
+  node.setAttribute("role","dialog");node.setAttribute("aria-label",title);head.appendChild(el("h2",null,title));
+  var close=el("button","x","✕");close.onclick=closeOverlay;head.appendChild(close);node.appendChild(head);
+  body.appendChild(el("p","form-intro",intro));node.appendChild(body);error.hidden=true;body.appendChild(error);
+  var cancel=el("button","btn btn-o","Cancel");cancel.onclick=closeOverlay;foot.appendChild(cancel);node.appendChild(foot);
+  return {node:node,body:body,foot:foot,error:error,close:close,cancel:cancel};
+}
+function runDialogSave(ui,button,work,done){
+  var state=overlayState;state.busy=true;button.disabled=true;ui.close.disabled=true;ui.cancel.disabled=true;ui.error.hidden=true;
+  ui.body.querySelectorAll("input,select").forEach(function(n){n.disabled=true});
+  Promise.resolve().then(work).then(function(result){state.busy=false;closeOverlay(true);done(result)}).catch(function(e){
+    state.busy=false;button.disabled=false;ui.close.disabled=false;ui.cancel.disabled=false;
+    ui.body.querySelectorAll("input,select").forEach(function(n){n.disabled=false});
+    ui.error.textContent=e.userMessage||msgFor(e);ui.error.hidden=false;
+  });
+}
+function openDuplicate(source,campaign,repeating){
+  if(!writable())return;
+  var ui=actionDialog(repeating?"Repeat activity":campaign?"Duplicate campaign":"Duplicate activity",
+    "Copies saved details and all subtasks, keeps owners, and resets progress. Dates move with the new "+(campaign?"start date.":"due date."));
+  var name=input("text",(campaign?source.name:source.title)+(repeating?"":" (copy)")),date=input("date",campaign?source.startDate:repeating?addDays(source.dueDate,7):source.dueDate);
+  ui.body.appendChild(field(campaign?"Campaign name *":"Activity title *",name));ui.body.appendChild(field(campaign?"Start date *":"First due date *",date));
+  var repeat=null,save=el("button","btn btn-p sp",repeating?"Create repeats":"Duplicate");
+  if(repeating)repeat=repeatForm(ui.body,function(){return date.value},function(){if(repeat)validate()},"weekly");
+  var camp=null;
+  if(!campaign){camp=dropdown(S.campaigns.map(function(c){return[c.id,c.name]}),source.campaignId);ui.body.appendChild(field("Campaign *",camp));camp.onchange=validate}
+  function validate(){save.disabled=!name.value.trim()||!date.value||(repeat&&!repeat.valid())||(camp&&!camp.value)}
+  name.oninput=validate;date.oninput=function(){if(repeat)repeat.refresh();validate()};
+  save.onclick=function(){
+    validate();if(save.disabled)return;
+    runDialogSave(ui,save,function(){return wq.then(function(){
+      var current=campaign?(campById(source.id)||source):(S.activities.find(function(a){return a.id===source.id})||source);
+      if(!campaign){var copy=copyActivity(current,date.value,camp.value);copy.title=name.value.trim();return writeActivityCopies(copy,repeat?repeat.read():{unit:"",count:1})}
+      var acts=S.activities.filter(function(a){return a.campaignId===source.id});
+      if(acts.length>499){var e=new Error();e.userMessage="This campaign has too many activities to duplicate at once (maximum 499).";throw e}
+      var batch=db.batch(),ref=db.collection("campaigns").doc(),offset=daysBetween(current.startDate,date.value),copy=Object.assign({},current);
+      delete copy.id;copy.name=name.value.trim();copy.startDate=date.value;copy.endDate=addDays(current.endDate,offset);copy.status="Planning";copy.createdAt=new Date().toISOString();
+      batch.set(ref,copy);acts.forEach(function(a){batch.set(db.collection("activities").doc(),copyActivity(a,addDays(a.dueDate,offset),ref.id))});
+      return batch.commit();
+    })},function(){toast(repeating?"Recurring activities created":campaign?"Campaign and activities duplicated":"Activity duplicated")});
+  };
+  ui.foot.appendChild(save);validate();overlay(ui.node,null,true);
+}
+function saveTemplate(a,nodes,suggested){
+  if(!writable()||!nodes.length)return;
+  var ui=actionDialog("Save reusable group","Reuse these steps in any activity. Owners and details are kept; deadlines stay relative to the activity date and progress resets.");
+  var name=input("text",suggested||a.title);ui.body.appendChild(field("Group name *",name));
+  var save=el("button","btn btn-p sp","Save group");name.oninput=function(){save.disabled=!name.value.trim()};
+  save.onclick=function(){if(!name.value.trim())return;runDialogSave(ui,save,function(){
+    return db.collection("subtaskTemplates").add({name:name.value.trim(),nodes:copyNodes(nodes),anchorDate:a.dueDate,createdAt:new Date().toISOString()});
+  },function(){toast("Reusable group saved")})};
+  ui.foot.appendChild(save);name.oninput();overlay(ui.node,null,true);
+}
+function openTemplatePicker(a,parentId,depth,onAdd){
+  if(!writable())return;
+  var ui=actionDialog("Add saved group","Choose a reusable checklist or group. It will be added alongside your existing steps.");
+  if(S.templatesLoading)ui.body.appendChild(el("p","hint","Saved groups are still loading. Close this dialog and try again in a moment."));
+  else if(S.templateError)ui.body.appendChild(el("p","hint err",S.templateError));
+  else if(!S.templates.length)ui.body.appendChild(el("p","hint","No saved groups yet. Use Save as reusable group on a checklist or subtask first."));
+  S.templates.slice().sort(function(a,b){return a.name.localeCompare(b.name)}).forEach(function(t){
+    var row=el("div","template-row"),main=el("div");main.appendChild(el("strong",null,t.name));
+    var fits=treeDepth(t.nodes)+depth<=MAXDEPTH;
+    main.appendChild(el("p","hint",fits?leaves(t.nodes).length+" steps":"Too many nesting levels for this location"));row.appendChild(main);
+    var add=el("button","btn btn-o","Add group");add.disabled=!fits;
+    add.onclick=function(){
+      var offset=t.anchorDate&&a.dueDate?daysBetween(t.anchorDate,a.dueDate):0,nodes=copyNodes(t.nodes,offset);
+      closeOverlay(true);onAdd(nodes,parentId);toast("Added "+t.name);
+    };row.appendChild(add);
+    var del=el("button","text-button","Delete");del.setAttribute("aria-label","Delete saved group "+t.name);
+    del.onclick=function(){confirmRemoval(row,"Delete this saved group? Existing activities keep their steps.",function(){
+      del.disabled=true;db.doc("subtaskTemplates/"+t.id).delete().then(function(){row.remove();toast("Saved group deleted")}).catch(function(e){del.disabled=false;toast(msgFor(e))});
+    })};row.appendChild(del);ui.body.appendChild(row);
+  });overlay(ui.node,null,true);
+}
+function checklistTools(a,onChange){
+  var bar=el("div","reuse-tools"),add=el("button","tpl-btn","+ Add saved group"),save=el("button","tpl-btn","Save checklist as reusable group");
+  add.onclick=function(){openTemplatePicker(a,null,0,function(nodes){a.subtasks=(a.subtasks||[]).concat(nodes);onChange()})};
+  save.disabled=!(a.subtasks||[]).length;save.onclick=function(){saveTemplate(a,a.subtasks,a.title)};bar.appendChild(add);bar.appendChild(save);return bar;
+}
+function subReuseActions(a,s,depth,onChange){
+  var menu=el("details","reuse-menu"),summary=el("summary",null,"⋯");summary.title="Subtask actions";summary.setAttribute("aria-label","Actions for "+s.title);menu.appendChild(summary);
+  function action(label,fn){var b=el("button",null,label);b.onclick=function(){menu.open=false;fn()};menu.appendChild(b)}
+  action("Duplicate",function(){var copy=copyNodes([s])[0];copy.title+=" (copy)";a.subtasks=insertAfter(a.subtasks,s.id,copy);onChange();toast("Subtask duplicated")});
+  action("Save as reusable group",function(){saveTemplate(a,[s],s.title)});
+  if(depth<MAXDEPTH-1)action("Add saved group inside",function(){openTemplatePicker(a,s.id,depth+1,function(nodes){
+    nodes.forEach(function(n){a.subtasks=addChild(a.subtasks,s.id,n)});S.expanded["n"+s.id]=true;onChange();
+  })});return menu;
+}
+
 /* One creative, several placements. Each placement is a different design,
    so each becomes its own item with its own owner and date. */
 function placementPicker(node,onAdd,onCancel){
@@ -873,6 +1020,7 @@ function subNodes(host,a,nodes,depth){
     subTitle.setAttribute("aria-label","Edit subtask: "+s.title);
     subTitle.onclick=function(){openSubtask(a,s)};r.appendChild(subTitle);
     if(writable())r.appendChild(subtaskEditButton(a,s));
+    if(writable())r.appendChild(subReuseActions(a,s,depth,function(){persistSubs(a);render()}));
     var mt=el("span","sub-meta");
     if(group){
       var n=nodeCount(s),pg=el("span","sub-count",n[0]+"/"+n[1]);
@@ -938,7 +1086,10 @@ function subtaskTree(a){
   var box=el("div","subs"),subs=a.subtasks||[];
   if(!subs.length&&!writable())box.appendChild(el("div","sub-empty","No subtasks."));
   subNodes(box,a,subs,0);
-  if(writable())box.appendChild(subAddInput(a,null,"+ Add a subtask"));
+  if(writable()){
+    box.appendChild(subAddInput(a,null,"+ Add a subtask"));
+    box.appendChild(checklistTools(a,function(){persistSubs(a);render()}));
+  }
   return box;
 }
 
@@ -1346,7 +1497,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
     owner:a?(a.owner||""):"",
     description:a?(a.description||""):"",
     keywords:a?(a.keywords||[]).slice():[],
-    script:a?(a.script||""):"",useTemplate:false
+    script:a?(a.script||""):"",useTemplate:false,templateNodes:[],templateAnchor:presetDate||TODAY,repeat:{unit:"",count:1}
   };
   var initial=JSON.stringify(d);
   /* true while the platforms were filled in by the format, not by the user */
@@ -1358,6 +1509,11 @@ function openActivity(a,presetDate,presetCampaign,preset){
   p.appendChild(head);
   var body=el("div","p-body");p.appendChild(body);
   body.appendChild(el("p","form-intro",isNew?"Start with the essentials. You can fill in the content details later.":"Update the plan, schedule or content for this activity."));
+  if(!isNew&&writable()){
+    var reuse=el("div","reuse-tools"),duplicate=el("button","btn btn-o","Duplicate activity"),repeatButton=el("button","btn btn-o","Repeat activity");
+    duplicate.onclick=function(){openDuplicate(a,false,false)};repeatButton.onclick=function(){openDuplicate(a,false,true)};
+    reuse.appendChild(duplicate);reuse.appendChild(repeatButton);body.appendChild(reuse);
+  }
 
   var titleIn=input("text",d.title,"e.g. Topper interview — Akriti, AIR 12");
   titleIn.id="act-title";
@@ -1431,8 +1587,14 @@ function openActivity(a,presetDate,presetCampaign,preset){
   two.appendChild(dw);two.appendChild(tw);
   body.appendChild(two);
   var rangeHint=el("div","hint warn");rangeHint.hidden=true;body.appendChild(rangeHint);
-  dd.oninput=function(){d.dueDate=dd.value;validate()};
+  dd.oninput=function(){d.dueDate=dd.value;if(repeatOptions)repeatOptions.refresh();validate()};
   dt.oninput=function(){d.dueTime=dt.value};
+  var repeatOptions=null;
+  if(isNew){
+    var repeatSection=disclosure("Repeat activity","Create a daily, weekly or monthly series");
+    repeatOptions=repeatForm(repeatSection.body,function(){return d.dueDate},function(){if(repeatOptions){d.repeat=repeatOptions.read();validate()}});
+    body.appendChild(repeatSection.node);
+  }
 
   body.appendChild(field("Owner (optional)",ownerPicker(d.owner,function(id){d.owner=id})));
   body.appendChild(contentDetails.node);
@@ -1513,6 +1675,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
         };
         r.appendChild(ti);
         r.appendChild(subtaskEditButton(a,s,function(current){a.subtasks=current.subtasks;drawSubs(null)}));
+        if(writable())r.appendChild(subReuseActions(a,s,depth,function(){persistSubs(a);render();drawSubs(null)}));
         if(s.description)r.appendChild(el("p","sub-description",s.description));
         if(depth<MAXDEPTH-1){
           var pc=el("button","sub-x place","⊞");
@@ -1572,6 +1735,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
       };
       sbox.appendChild(ai);
       if(writable()){
+        sbox.appendChild(checklistTools(a,function(){persistSubs(a);render();drawSubs(null)}));
         var def=STEPS[d.type]||["Script","Edit","Review"];
         var tb=el("button","tpl-btn","+ Add the usual breakdown"+(d.type?" for "+d.type.toLowerCase():""));
         tb.type="button";
@@ -1608,6 +1772,15 @@ function openActivity(a,presetDate,presetCampaign,preset){
     checkLabel.appendChild(templateToggle);checkLabel.appendChild(document.createTextNode("Add suggested checklist"));
     var templateHint=el("p","hint",templateDescription());
     checklist.body.appendChild(checkLabel);checklist.body.appendChild(templateHint);body.appendChild(checklist.node);
+    var savedList=el("div","ps-list"),addSaved=el("button","tpl-btn","+ Add saved group");
+    function drawSaved(){
+      clear(savedList);d.templateNodes.forEach(function(n){
+        var row=el("div","template-row");row.appendChild(el("span",null,n.title+(kids(n).length?" · "+leaves([n]).length+" steps":"")));
+        var remove=el("button","text-button","Remove");remove.onclick=function(){d.templateNodes=d.templateNodes.filter(function(x){return x.id!==n.id});drawSaved()};row.appendChild(remove);savedList.appendChild(row);
+      });
+    }
+    addSaved.onclick=function(){openTemplatePicker({dueDate:d.templateAnchor},null,0,function(nodes){d.templateNodes=d.templateNodes.concat(nodes);drawSaved()})};
+    checklist.body.appendChild(addSaved);checklist.body.appendChild(savedList);
   }
   body.appendChild(scriptSection.node);
   function templateDescription(){return (STEPS[d.type]||["Script","Edit","Review"]).map(function(s){return typeof s==="string"?s:s.t}).join(" · ")}
@@ -1643,29 +1816,37 @@ function openActivity(a,presetDate,presetCampaign,preset){
   p.appendChild(foot);
   body.appendChild(err);
 
-  function showErr(e){err.hidden=false;err.textContent=msgFor(e);save.disabled=false;save.textContent=isNew?"Create activity":"Save changes"}
+  var saving=false,disabledBeforeSave=[];
+  function showErr(e){
+    saving=false;if(overlayState)overlayState.busy=false;
+    disabledBeforeSave.forEach(function(item){item.node.disabled=item.disabled});
+    err.hidden=false;err.textContent=msgFor(e);validate();save.textContent=isNew?"Create activity":"Save changes";
+  }
   function validate(){
-    var ok=d.title.trim()&&d.campaignId&&d.dueDate;
-    save.disabled=!ok||!writable();
+    var ok=d.title.trim()&&d.campaignId&&d.dueDate&&(!repeatOptions||repeatOptions.valid());
+    save.disabled=saving||!ok||!writable();
     var missing=[];if(!d.title.trim())missing.push("a title");if(!d.campaignId)missing.push("a campaign");if(!d.dueDate)missing.push("a due date");
     requiredNote.textContent=ok?(isNew?"Optional details can be added later.":"Save changes to update the details above."):"Add "+missing.join(", ")+" to continue.";
+    if(repeatOptions&&!repeatOptions.valid())requiredNote.textContent="Choose 2 to 52 total occurrences.";
     var c=campById(d.campaignId);
     if(c&&d.dueDate&&(d.dueDate<c.startDate||d.dueDate>c.endDate)){
       rangeHint.hidden=false;
       rangeHint.textContent="This date is outside the campaign window ("+fmtShort(c.startDate)+" → "+fmtLong(c.endDate)+"). You can still save it.";
     }else rangeHint.hidden=true;
-    return ok;
+    return ok&&!saving&&writable();
   }
   function submit(){
     if(!validate())return;
+    saving=true;overlayState.busy=true;
+    disabledBeforeSave=Array.from(p.querySelectorAll("button,input,textarea,select")).map(function(n){var item={node:n,disabled:n.disabled};n.disabled=true;return item});
     save.disabled=true;save.textContent="Saving…";err.hidden=true;
     var payload={title:d.title.trim(),campaignId:d.campaignId,type:d.type,angle:d.angle,cta:d.cta,
       platforms:d.platforms,dueDate:d.dueDate,dueTime:d.dueTime,owner:d.owner,
       description:d.description.trim(),keywords:d.keywords,script:d.script};
     if(isNew){
-      payload.status="Not started";payload.assets={};payload.subtasks=d.useTemplate?buildSteps(STEPS[d.type]||["Script","Edit","Review"]):[];
+      payload.status="Not started";payload.assets={};payload.subtasks=(d.useTemplate?buildSteps(STEPS[d.type]||["Script","Edit","Review"]):[]).concat(copyNodes(d.templateNodes,daysBetween(d.templateAnchor,d.dueDate)));
       payload.createdAt=new Date().toISOString();
-      db.collection("activities").add(payload).then(function(){closeOverlay(true);toast("Activity added to "+fmtLong(d.dueDate))})
+      writeActivityCopies(payload,d.repeat).then(function(){closeOverlay(true);toast(d.repeat.unit?d.repeat.count+" recurring activities created":"Activity added to "+fmtLong(d.dueDate))})
         .catch(showErr);
     }else{
       db.doc("activities/"+a.id).update(payload).then(function(){closeOverlay(true);toast("Changes saved")}).catch(showErr);
@@ -1871,6 +2052,7 @@ function showGate(kind,extra){
 function startData(){
   subs.forEach(function(f){try{f()}catch(e){}});subs=[];
   S.loading=true;S.err=null;pending=3;render();
+  S.templates=[];S.templatesLoading=true;S.templateError="";
   var waiting={campaigns:true,activities:true,users:true};
   function received(key,snap){
     if(waiting[key]&&(!snap||!snap.metadata.fromCache)){
@@ -1893,6 +2075,13 @@ function startData(){
     S.activities=snap.docs.map(function(d){var o=Object.assign({},d.data());o.id=d.id;return o});
     received("activities",snap);render();
   },onErr));
+  subs.push(db.collection("subtaskTemplates").onSnapshot(function(snap){
+    S.templates=snap.docs.map(function(d){return Object.assign({},d.data(),{id:d.id})});
+    S.templatesLoading=false;S.templateError="";
+  },function(e){
+    S.templatesLoading=false;S.templateError=e.code==="permission-denied"?
+      "Saved groups are unavailable. Publish the updated Firestore rules to enable shared reusable groups.":msgFor(e);
+  }));
   /* the team roster, so owners resolve to real names */
   subs.push(db.collection("users").onSnapshot({includeMetadataChanges:true},function(snap){
     S.team=snap.docs.map(function(d){
@@ -1955,7 +2144,7 @@ document.addEventListener("click",function(e){if(!e.target.closest(".account"))c
   auth.onAuthStateChanged(function(u){
     if(!u){
       subs.forEach(function(f){try{f()}catch(e){}});subs=[];
-      S.me=null;S.campaigns=[];S.activities=[];S.team=[];S.loading=true;
+      S.me=null;S.campaigns=[];S.activities=[];S.team=[];S.templates=[];S.templateError="";S.templatesLoading=true;S.loading=true;
       render();showGate("signin");return;
     }
     if(!emailAllowed(u.email)){S.me=null;render();showGate("denied",u.email);return;}
