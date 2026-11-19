@@ -527,12 +527,12 @@ function renderFocus(box,from,to,showDates){
         cb.title="Mark done";
         cb.onclick=function(){saveSubs(it.a,patchNode(it.a.subtasks,x.n.id,{done:true}))};
         r.appendChild(cb);
+        r.appendChild(subtaskDeadline(it.a,x.n));
         var subTitle=el("button","sub-t sub-title-button",x.n.title);
         subTitle.setAttribute("aria-label","Edit subtask: "+x.n.title);
         subTitle.onclick=function(){openSubtask(it.a,x.n)};r.appendChild(subTitle);
         if(writable())r.appendChild(subtaskEditButton(it.a,x.n));
         var mt=el("span","sub-meta");
-        mt.appendChild(subtaskDeadline(it.a,x.n));
         if(x.path)mt.appendChild(el("span","sub-kind",x.path));
         if(x.n.platform)mt.appendChild(platPill(x.n.platform));
         if(x.n.kind)mt.appendChild(el("span","sub-kind",x.n.kind));
@@ -735,7 +735,7 @@ function platPill(p){
 function subtaskDeadline(a,s,onSaved){
   var late=!!s.due&&s.due<TODAY&&!nodeDone(s);
   var date=s.due?(s.due.slice(0,4)===TODAY.slice(0,4)?fmtShort(s.due):fmtLong(s.due)):"";
-  var deadline=el(writable()?"button":"span","sub-deadline"+(late?" overdue":"")+(!s.due?" unset":""),s.due?"Due "+date:"Set deadline");
+  var deadline=el(writable()?"button":"span","sub-deadline"+(late?" overdue":"")+(!s.due?" unset":""),s.due?date:"Set deadline");
   deadline.title=s.due?"Deadline: "+fmtLong(s.due)+(late?" · overdue":""):"No deadline set";
   if(writable()){
     deadline.setAttribute("aria-label",(s.due?"Change deadline for ":"Set deadline for ")+(s.title||"Untitled subtask")+(s.due?": "+fmtLong(s.due):""));
@@ -868,6 +868,7 @@ function subNodes(host,a,nodes,depth){
       cb.onclick=function(){saveSubs(a,patchNode(a.subtasks,s.id,{done:!s.done}))};
       r.appendChild(cb);
     }
+    r.appendChild(subtaskDeadline(a,s));
     var subTitle=el("button","sub-t sub-title-button"+(nodeDone(s)?" done":""),s.title);
     subTitle.setAttribute("aria-label","Edit subtask: "+s.title);
     subTitle.onclick=function(){openSubtask(a,s)};r.appendChild(subTitle);
@@ -894,7 +895,6 @@ function subNodes(host,a,nodes,depth){
       if(s.platform)mt.appendChild(platPill(s.platform));
       if(s.kind)mt.appendChild(el("span","sub-kind",s.kind));
     }
-    mt.appendChild(subtaskDeadline(a,s));
     if(s.owner)mt.appendChild(uname(s.owner));
     r.appendChild(mt);
     if(writable()&&depth<MAXDEPTH-1){
