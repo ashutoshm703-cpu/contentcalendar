@@ -267,6 +267,10 @@ textarea{resize:vertical;min-height:76px;font-weight:300;line-height:1.6}
 .sub-title-button:hover{color:var(--text);text-decoration:underline;text-underline-offset:3px}
 .sub-edit{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;color:var(--text-2);border:1px solid var(--line);border-radius:6px;padding:0;flex:none;background:var(--surface)}
 .sub-edit:hover{background:var(--ice);color:var(--text)}
+.sub-deadline{display:inline-flex;align-items:center;min-height:28px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--text-2);font-size:11px;font-weight:500;white-space:nowrap}
+button.sub-deadline:hover{background:var(--ice);color:var(--text)}
+.sub-deadline.unset{border-style:dashed;color:var(--text-3)}
+.sub-deadline.overdue{color:var(--danger);background:var(--danger-soft);border-color:transparent}
 .sub-description{flex:1 1 100%;width:100%;font-size:12px;line-height:1.7;color:var(--text-2);white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;margin:2px 0 5px;order:2}
 .subtask-description-input{min-height:135px;font-weight:400}
 .subtask-modal .form-intro{overflow-wrap:anywhere}
@@ -346,6 +350,8 @@ input.q-time{flex:1 1 108px;width:auto;min-width:0;font-size:12.5px;padding:9px 
 .ps-2{flex:1 1 100%;display:flex;gap:7px;min-width:0;flex-wrap:wrap}
 select.ps-plat,select.ps-kind{flex:1 1 106px;width:auto;min-width:0;font-size:12px;padding:7px 9px;background:var(--surface)}
 input.ps-date{flex:1 1 126px;width:auto;min-width:0;font-size:12px;padding:7px 9px;background:var(--surface)}
+.ps-deadline{flex:1 1 126px;min-width:0}.ps-deadline label{font-size:10px;margin-bottom:4px}.ps-deadline input.ps-date{width:100%}
+.ps-2{align-items:flex-end}
 .ps-own{flex:1 1 132px;min-width:0}
 .ps-own input{font-size:12px;padding:7px 9px;background:var(--surface)}
 .tpl-btn{margin-top:4px;font-size:12.5px;font-weight:600;color:var(--sky);text-align:left;padding:7px 2px}

@@ -34,6 +34,9 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   due date, platform and type. **Save subtask** stores the details in Firestore.
   Nested subtasks and groups support descriptions too. Opening subtask details
   from an activity preserves the unfinished activity form underneath.
+- Every displayed subtask shows its deadline, or **Set deadline** when no date
+  has been assigned. Select the deadline to edit it; overdue deadlines are
+  highlighted until the item is complete.
 - Form labels, dialog focus, view-tab keyboard navigation and visible focus
   indicators support keyboard use. Optional fields are identified in the forms.
 

@@ -532,7 +532,7 @@ function renderFocus(box,from,to,showDates){
         subTitle.onclick=function(){openSubtask(it.a,x.n)};r.appendChild(subTitle);
         if(writable())r.appendChild(subtaskEditButton(it.a,x.n));
         var mt=el("span","sub-meta");
-        if(showDates&&x.n.due)mt.appendChild(el("span",null,fmtShort(x.n.due)));
+        mt.appendChild(subtaskDeadline(it.a,x.n));
         if(x.path)mt.appendChild(el("span","sub-kind",x.path));
         if(x.n.platform)mt.appendChild(platPill(x.n.platform));
         if(x.n.kind)mt.appendChild(el("span","sub-kind",x.n.kind));
@@ -732,6 +732,17 @@ function platAbbr(p){
 function platPill(p){
   var s=el("span","sub-plat",platAbbr(p));s.title=p;return s;
 }
+function subtaskDeadline(a,s,onSaved){
+  var late=!!s.due&&s.due<TODAY&&!nodeDone(s);
+  var date=s.due?(s.due.slice(0,4)===TODAY.slice(0,4)?fmtShort(s.due):fmtLong(s.due)):"";
+  var deadline=el(writable()?"button":"span","sub-deadline"+(late?" overdue":"")+(!s.due?" unset":""),s.due?"Due "+date:"Set deadline");
+  deadline.title=s.due?"Deadline: "+fmtLong(s.due)+(late?" · overdue":""):"No deadline set";
+  if(writable()){
+    deadline.setAttribute("aria-label",(s.due?"Change deadline for ":"Set deadline for ")+(s.title||"Untitled subtask")+(s.due?": "+fmtLong(s.due):""));
+    deadline.onclick=function(){openSubtask(a,s,onSaved,true)};
+  }else if(!s.due)deadline.textContent="No deadline";
+  return deadline;
+}
 function kids(n){return (n&&n.children)||[]}
 /* only leaves count — a group's state is whatever its children say */
 function leaves(nodes,out){
@@ -883,7 +894,7 @@ function subNodes(host,a,nodes,depth){
       if(s.platform)mt.appendChild(platPill(s.platform));
       if(s.kind)mt.appendChild(el("span","sub-kind",s.kind));
     }
-    if(s.due)mt.appendChild(el("span",null,fmtShort(s.due)));
+    mt.appendChild(subtaskDeadline(a,s));
     if(s.owner)mt.appendChild(uname(s.owner));
     r.appendChild(mt);
     if(writable()&&depth<MAXDEPTH-1){
@@ -1158,7 +1169,7 @@ function overlay(node,dirty,preserveParent){
     var ff=node.querySelectorAll("input,select,textarea,.pill,.chk");
     for(var i=0;i<ff.length;i++)ff[i].disabled=true;
   }
-  var first=node.querySelector("input,select,textarea");if(first)setTimeout(function(){first.focus()},120);
+  var first=node.querySelector("[autofocus]")||node.querySelector("input,select,textarea");if(first)setTimeout(function(){first.focus()},120);
 }
 document.addEventListener("keydown",function(e){
   if(e.key==="Escape"){if(!$("account-menu").hidden){closeAccount();$("who").focus()}else closeOverlay();return}
@@ -1256,7 +1267,7 @@ function subtaskEditButton(a,s,onSaved){
   edit.setAttribute("aria-label","Edit details for "+(s.title||"Untitled subtask"));
   edit.onclick=function(){openSubtask(a,s,onSaved)};return edit;
 }
-function openSubtask(a,s,onSaved){
+function openSubtask(a,s,onSaved,focusDeadline){
   var original={title:s.title||"",description:s.description||"",owner:s.owner||"",due:s.due||"",platform:s.platform||"",kind:s.kind||""};
   var draft=Object.assign({},original),saving=false;
   var dialog=el("div","modal subtask-modal");dialog.setAttribute("role","dialog");dialog.setAttribute("aria-label","Edit subtask");
@@ -1271,7 +1282,8 @@ function openSubtask(a,s,onSaved){
   description.oninput=function(){draft.description=description.value};
   body.appendChild(field("Description (optional)",description,"Include anything the person doing this task needs to know."));
   var planning=el("div","f2"),date=input("date",draft.due);
-  date.oninput=function(){draft.due=date.value};planning.appendChild(field("Due date (optional)",date));
+  if(focusDeadline)date.autofocus=true;
+  date.oninput=function(){draft.due=date.value};planning.appendChild(field("Deadline (optional)",date));
   planning.appendChild(field("Owner (optional)",ownerPicker(draft.owner,function(id){draft.owner=id})));body.appendChild(planning);
   var details=disclosure("More details","Platform & type");
   var platform=dropdown(PLATFORMS.map(function(p){return[p[0],p[0]]}),draft.platform,"Not set");
@@ -1530,7 +1542,8 @@ function openActivity(a,presetDate,presetCampaign,preset){
         dd.onchange=function(){patchSub(s.id,{due:dd.value})};
         var op=ownerPicker(s.owner,function(id){patchSub(s.id,{owner:id})});
         op.classList.add("ps-own");
-        two.appendChild(pf2);two.appendChild(kd);two.appendChild(dd);two.appendChild(op);
+        var deadlineField=field("Deadline",dd);deadlineField.classList.add("ps-deadline");
+        two.appendChild(pf2);two.appendChild(kd);two.appendChild(deadlineField);two.appendChild(op);
         r.appendChild(two);
         sbox.appendChild(r);
         if(S.placeFor===s.id&&depth<MAXDEPTH-1){
