@@ -11,6 +11,28 @@ whole team sees live.
 
 No build step. Static files, Firestore for data, Firebase Auth for sign-in.
 
+## Workspace experience
+
+- **Next 7 days** opens first. Select a day to focus its activities; choose
+  **Show all 7 days** to return to the week ahead. Week and Month use an agenda
+  on narrow screens.
+- The account avatar is at the far right of the workspace header. Open it for
+  account details and an explicit **Sign out** action.
+- Create a campaign with its name and dates, then add the first activity in the
+  expanded campaign. Goal, owner and status are available under Campaign details.
+- Activities start with a title, campaign and due date. Content details, a
+  suggested checklist and a script are available in expandable sections.
+- Activity details use **Save changes**. Status and checklist edits save
+  immediately. Closing a changed form offers **Keep editing** or **Discard
+  changes**; refreshing the page also warns about an unfinished form.
+- Search covers campaign names, content titles, formats, topics, notes and
+  keywords. Campaign filters apply to campaign status and owner; calendar
+  filters apply to activities. Empty results offer a clear reset action.
+- Checklist removal asks for confirmation. Clearing an item's title does not
+  delete it. Campaign and activity deletion also require an explicit choice.
+- Form labels, dialog focus, view-tab keyboard navigation and visible focus
+  indicators support keyboard use. Optional fields are identified in the forms.
+
 ```
 index.html           markup and script tags
 styles.css           the whole visual system

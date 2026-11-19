@@ -108,11 +108,11 @@ var MONTHS=["January","February","March","April","May","June","July","August","S
 var DOW=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
 /* ─── state ─────────────────────────────────────────────── */
-var S={campaigns:[],activities:[],view:"calendar",calView:"month",anchor:"",y:0,m:0,
+var S={campaigns:[],activities:[],view:"calendar",calView:"next7",anchor:"",y:0,m:0,
   filters:{campaign:"",platform:"",format:"",owner:"",status:""},
   loading:true,stale:false,err:null,canWrite:null,open:null,expanded:{},focusAdd:null,lastAdd:{},
   placeFor:null,showFilters:false,me:null,team:[],
-  profiles:{},dayMax:3};
+  profiles:{},dayMax:3,query:"",focusDay:""};
 var db=null,U=null,phone=false;
 var $=function(id){return document.getElementById(id)};
 
@@ -159,6 +159,7 @@ function statusIdx(s){var i=STATUSES.indexOf(s);return i<0?0:i}
 function visible(){
   var f=S.filters;
   return S.activities.filter(function(a){
+    if(!matchesSearch(a))return false;
     if(f.campaign&&a.campaignId!==f.campaign)return false;
     if(f.status&&a.status!==f.status)return false;
     if(f.format&&a.type!==f.format)return false;
@@ -167,6 +168,20 @@ function visible(){
     return true;
   });
 }
+function matchesSearch(a){
+  var q=S.query.trim().toLowerCase();
+  if(!q)return true;
+  var c=campById(a.campaignId);
+  return [a.title,a.type,a.angle,a.description,(a.keywords||[]).join(" "),c&&c.name].join(" ").toLowerCase().indexOf(q)>=0;
+}
+function campaignMatches(c){
+  var f=S.filters,q=S.query.trim().toLowerCase();
+  if(f.campaignStatus&&c.status!==f.campaignStatus)return false;
+  if(f.owner&&c.owner!==f.owner)return false;
+  return !q||[c.name,c.goal].join(" ").toLowerCase().indexOf(q)>=0||S.activities.some(function(a){return a.campaignId===c.id&&matchesSearch(a)});
+}
+function resetFilterValues(){Object.keys(S.filters).forEach(function(k){S.filters[k]=""})}
+function resetFilters(){resetFilterValues();S.query="";render()}
 function byDay(list){
   var m={};
   list.forEach(function(a){(m[a.dueDate]=m[a.dueDate]||[]).push(a)});
@@ -216,6 +231,7 @@ function headSub(){
   if(S.loading)return "Loading the team's plan…";
   if(S.view==="campaigns"){
     if(!S.campaigns.length)return "Nothing planned yet.";
+    if(S.query||activeFilters().length){var matches=S.campaigns.filter(campaignMatches).length;return matches+" matching "+(matches===1?"campaign":"campaigns")}
     var live=S.campaigns.filter(function(c){return c.status==="Live"}).length;
     return S.campaigns.length+(S.campaigns.length===1?" campaign":" campaigns")
       +(live?" · "+live+" live":"");
@@ -236,14 +252,21 @@ function filterLabel(k,v){
   return v;
 }
 function activeFilters(){
-  return Object.keys(S.filters).filter(function(k){return S.filters[k]});
+  var keys=S.view==="campaigns"?["owner","campaignStatus"]:["campaign","platform","format","owner","status"];
+  return keys.filter(function(k){return S.filters[k]});
 }
 function renderHead(){
   var h=$("head");clear(h);
   var cal=S.view==="calendar";
   var box=el("div","phead");
-  box.appendChild(el("h1",null,headTitle()));
-  box.appendChild(el("p","psub",headSub()));
+  var heading=el("div","pheading"),intro=el("div");
+  intro.appendChild(el("p","eyebrow",cal?"Publishing schedule":"Campaign planning"));
+  intro.appendChild(el("h1",null,headTitle()));
+  intro.appendChild(el("p","psub",headSub()));heading.appendChild(intro);
+  var add=el("button","btn btn-p","+ "+(!cal?"New campaign":"New activity"));add.id="new-act";
+  add.hidden=S.loading||!S.me||!writable()||!S.campaigns.length;
+  add.onclick=!cal?function(){openCampaign(null)}:function(){openActivity(null,S.calView==="next7"?S.focusDay:undefined)};
+  heading.appendChild(add);box.appendChild(heading);
   var ctl=el("div","pctl");
   if(cal&&(S.calView==="week"||S.calView==="month")){
     var nav=el("div","nav");
@@ -277,17 +300,28 @@ function renderHead(){
     ob.onclick=function(){S.view="calendar";S.calView="today";clearDayExpand();render()};
     ctl.appendChild(ob);
   }
-  var fb=el("button","ghost"+(S.showFilters?" on":""),"Filter");
+  if(S.campaigns.length){
+  var search=el("div","searchbox");
+  var searchIn=input("search",S.query,cal?"Search activities…":"Search campaigns…");
+  searchIn.id="calendar-search";searchIn.setAttribute("aria-label",cal?"Search activities":"Search campaigns");
+  searchIn.oninput=function(){S.query=searchIn.value;renderMain();clearSearch.hidden=!S.query};
+  var clearSearch=el("button","search-clear","×");clearSearch.setAttribute("aria-label","Clear search");clearSearch.hidden=!S.query;
+  clearSearch.onclick=function(){S.query="";searchIn.value="";clearSearch.hidden=true;renderMain();searchIn.focus()};
+  search.appendChild(searchIn);search.appendChild(clearSearch);ctl.appendChild(search);
+  var fb=el("button","ghost"+(S.showFilters?" on":""),"Filters"+(activeFilters().length?" · "+activeFilters().length:""));
+  fb.setAttribute("aria-expanded",String(S.showFilters));fb.setAttribute("aria-controls","calendar-filters");
   fb.onclick=function(){S.showFilters=!S.showFilters;render()};
   ctl.appendChild(fb);
   activeFilters().forEach(function(k){
     var ch=el("div","fchip");
     ch.appendChild(el("b",null,filterLabel(k,S.filters[k])));
-    var x=el("button",null,"✕");x.title="Clear this filter";
+    var x=el("button",null,"✕");x.setAttribute("aria-label","Clear "+filterLabel(k,S.filters[k])+" filter");
     x.onclick=function(){S.filters[k]="";render()};
     ch.appendChild(x);ctl.appendChild(ch);
   });
-  box.appendChild(ctl);
+  if(activeFilters().length){var clearAll=el("button","text-button","Clear filters");clearAll.onclick=resetFilters;ctl.appendChild(clearAll)}
+  }
+  if(S.campaigns.length)box.appendChild(ctl);
   if(S.showFilters)box.appendChild(filterBar());
   h.appendChild(box);
 }
@@ -301,7 +335,15 @@ function sel(id,label,opts,val,onChange){
   return s;
 }
 function filterBar(){
-  var f=el("div","fbar");
+  var f=el("div","fbar");f.id="calendar-filters";
+  if(S.view==="campaigns"){
+    f.appendChild(sel("f-cstat","Any campaign status",CSTATUS.map(function(s){return[s,s]}),S.filters.campaignStatus,
+      function(v){S.filters.campaignStatus=v;render()}));
+    var seen={},owners=S.campaigns.filter(function(c){if(!c.owner||seen[c.owner])return false;seen[c.owner]=true;return true});
+    if(owners.length)f.appendChild(sel("f-own","Any campaign owner",owners.map(function(c){return[c.owner,(S.profiles[c.owner]&&S.profiles[c.owner].name)||"Teammate"]}),S.filters.owner,
+      function(v){S.filters.owner=v;render()}));
+    return f;
+  }
   f.appendChild(sel("f-camp","All campaigns",S.campaigns.map(function(c){return[c.id,c.name]}),S.filters.campaign,
     function(v){S.filters.campaign=v;render()}));
   f.appendChild(sel("f-plat","All platforms",PLATFORMS.map(function(p){return[p[0],p[0]]}),S.filters.platform,
@@ -328,9 +370,10 @@ function chip(a){
   b.title=a.title+(c?" · "+c.name:"")+(a.type?" · "+a.type:"")+(a.angle?" / "+a.angle:"")
     +(a.cta?" · CTA: "+a.cta:"")+" · "+a.status
     +(a.dueTime?" · ends "+fmtTime(a.dueTime):"");
-  b.appendChild(el("span","t",a.title));
+  var title=el("span","t");title.appendChild(el("span",null,a.title));b.appendChild(title);
   var m=el("div","m");
   m.appendChild(el("i","dot s"+statusIdx(a.status)));
+  m.appendChild(el("span","status-label",a.status));
   (a.platforms||[]).slice(0,2).forEach(function(p){
     var ab=PLATFORMS.filter(function(x){return x[0]===p})[0];
     m.appendChild(el("span","pf",ab?ab[1]:p.slice(0,2).toUpperCase()));
@@ -421,13 +464,15 @@ function weekStrip(from,to){
   var map=byDay(visible()),box=el("div","wstrip"),n=daysBetween(from,to);
   for(var i=0;i<=n;i++){
     var key=addDays(from,i),items=map[key]||[];
-    var t=el("button","wday"+(key===TODAY?" today":"")+(items.length?"":" empty"));
+    var t=el("button","wday"+(key===TODAY?" today":"")+(items.length?"":" empty")+(S.focusDay===key?" selected":""));
+    t.setAttribute("aria-pressed",String(S.focusDay===key));
+    t.setAttribute("aria-label","Show activities for "+fmtLong(key));
     t.title=fmtLong(key)+" — "+(items.length?items.length+" scheduled":"nothing scheduled")
-      +(writable()?". Click to add.":"");
+      +". Select to view this day.";
     t.appendChild(el("span","wd",DOW[dowIdx(key)]));
     t.appendChild(el("b",null,String(parseISO(key).getDate())));
     t.appendChild(el("span","wn",items.length?String(items.length):"—"));
-    t.onclick=function(k){return function(){if(writable())openActivity(null,k)}}(key);
+    t.onclick=function(k){return function(){S.focusDay=S.focusDay===k?"":k;render()}}(key);
     box.appendChild(t);
   }
   return box;
@@ -530,22 +575,29 @@ function renderCalendar(main){
       box.appendChild(el("div","note","Nothing due today, and no subtask dated today either."));
   }else if(v==="next7"){
     box.appendChild(weekStrip(r[0],r[1]));
-    var od2=overdueBlock();if(od2)box.appendChild(od2);
-    if(!renderFocus(box,r[0],r[1],true))
-      box.appendChild(el("div","note",
-        "Nothing scheduled in the next 7 days. Click any day above to add something."));
+    var selected=S.focusDay&&S.focusDay>=r[0]&&S.focusDay<=r[1]?S.focusDay:"";
+    if(selected){
+      var dayHead=el("div","day-focus");dayHead.appendChild(el("h2",null,fmtLong(selected)));
+      var allDays=el("button","text-button","Show all 7 days");allDays.onclick=function(){S.focusDay="";render()};dayHead.appendChild(allDays);box.appendChild(dayHead);
+    }else{var od2=overdueBlock();if(od2)box.appendChild(od2)}
+    if(!renderFocus(box,selected||r[0],selected||r[1],true)){
+      var empty=el("div","no-results");empty.appendChild(el("h2",null,selected?"A clear day":"Nothing scheduled yet"));
+      empty.appendChild(el("p",null,selected?"No activities or checklist items are due on this day.":"Add an activity to start planning the week ahead."));
+      if(writable()){var add=el("button","btn btn-o","+ Add activity");add.onclick=function(){openActivity(null,selected||TODAY)};empty.appendChild(add)}
+      box.appendChild(empty);
+    }
   }else if(phone){
     res=agendaList(r[0],r[1],false);box.appendChild(res.node);
     if(!res.total)box.appendChild(el("div","note","Nothing scheduled in "
       +(v==="week"?"this week":MONTHS[S.m]+" "+S.y)+". Use + New activity to add the first one."));
   }else if(v==="week"){
     res=dayGrid(r[0],7,"232px");box.appendChild(res.node);
-    if(!res.total)box.appendChild(el("div","note","Nothing scheduled this week. Hover any day and click + to add."));
+    if(!res.total)box.appendChild(el("div","note","Nothing scheduled this week. Choose + on a day to add an activity."));
   }else{
     var first=new Date(S.y,S.m,1),off=(first.getDay()+6)%7,ndays=new Date(S.y,S.m+1,0).getDate();
     res=dayGrid(addDays(iso(first),-off),Math.ceil((off+ndays)/7)*7,null);
     box.appendChild(res.node);
-    if(!res.total)box.appendChild(el("div","note","Nothing scheduled in "+MONTHS[S.m]+" "+S.y+". Hover any day and click + to add."));
+    if(!res.total)box.appendChild(el("div","note","Nothing scheduled in "+MONTHS[S.m]+" "+S.y+". Choose + on a day to add an activity."));
   }
   main.appendChild(box);
 }
@@ -555,7 +607,9 @@ function renderCampaigns(main){
   if(S.loading){var g=el("div","camps");for(var i=0;i<3;i++){var s=el("div","skel");s.style.height="178px";g.appendChild(s)}main.appendChild(g);return}
   if(!S.campaigns.length){main.appendChild(emptyHero());return}
   var wrap=el("div","camps");
-  S.campaigns.slice().sort(function(a,b){return a.startDate<b.startDate?1:-1}).forEach(function(c,n){
+  var filtered=S.campaigns.filter(campaignMatches);
+  if(!filtered.length){main.appendChild(noResults("No matching campaigns","Try another search or clear your filters."));return}
+  filtered.slice().sort(function(a,b){return a.startDate<b.startDate?1:-1}).forEach(function(c,n){
     var acts=S.activities.filter(function(a){return a.campaignId===c.id});
     var pub=acts.filter(function(a){return a.status==="Published"}).length;
     var late=acts.filter(isLate).length;
@@ -572,7 +626,7 @@ function renderCampaigns(main){
     tgl.appendChild(h);
     tgl.onclick=function(){S.expanded["c"+c.id]=!open;render()};
     top.appendChild(tgl);
-    var ed=el("button","x","✎");ed.title="Edit campaign";ed.style.fontSize="13px";
+    var ed=el("button","edit-campaign","Edit");ed.setAttribute("aria-label","Edit "+c.name);
     ed.onclick=function(){openCampaign(c)};
     if(writable())top.appendChild(ed);
     card.appendChild(top);
@@ -592,7 +646,7 @@ function renderCampaigns(main){
     pl.appendChild(el("span",null,acts.length?Math.round(pub/acts.length*100)+"%":"no activities yet"));
     card.appendChild(pl);
     if(acts.length){
-      var tb=el("button","c-toggle");
+      var tb=el("button","c-toggle");tb.setAttribute("aria-expanded",String(open));
       tb.appendChild(el("span",null,open?"Hide activities"
         :"Show "+acts.length+(acts.length===1?" activity":" activities")));
       tb.appendChild(el("i","chev2",open?"▴":"▾"));
@@ -834,7 +888,7 @@ function subNodes(host,a,nodes,depth){
     if(writable()){
       var x=el("button","sub-x","✕");
       x.title=group?"Remove this group and everything in it":"Remove";
-      x.onclick=function(){saveSubs(a,removeNode(a.subtasks,s.id))};
+      x.onclick=function(){confirmRemoval(r,group?"Remove this group and everything inside it?":"Remove this checklist item?",function(){saveSubs(a,removeNode(a.subtasks,s.id))})};
       r.appendChild(x);
     }
     host.appendChild(r);
@@ -867,16 +921,20 @@ function quickAdd(c){
   var box=el("div","qadd");
   var ti=el("input");ti.type="text";ti.className="q-title";
   ti.placeholder="Add an activity to this campaign…";
+  ti.setAttribute("aria-label","Activity title for "+c.name);
   ti.setAttribute("data-focus","c"+c.id);
   var fs=formatSelect(la.type||"","Format…","q-fmt");
+  fs.setAttribute("aria-label","Activity format");
   var angleBox=el("span","q-angle");
   var dt=el("input");dt.type="date";dt.className="q-date";
-  dt.title="End date";dt.setAttribute("aria-label","End date");
+  dt.title="Due date";dt.setAttribute("aria-label","Due date");
   dt.value=la.date||((TODAY>=c.startDate&&TODAY<=c.endDate)?TODAY:c.startDate);
   var tm=el("input");tm.type="time";tm.className="q-time";
-  tm.title="End time (optional)";tm.setAttribute("aria-label","End time, optional");
+  tm.title="Time (optional)";tm.setAttribute("aria-label","Time, optional");
   tm.value=la.time||"";
   var go=el("button","btn btn-p q-go","Add");
+  go.disabled=true;
+  ti.oninput=function(){go.disabled=!ti.value.trim()};
   function drawAngle(keep){
     clear(angleBox);
     var f=formatById(fs.value);
@@ -888,7 +946,7 @@ function quickAdd(c){
   fs.onchange=function(){drawAngle(false)};
   drawAngle(true);
   function add(){
-    var t=ti.value.trim();if(!t)return;
+    var t=ti.value.trim();if(!t||go.disabled)return;
     var f=formatById(fs.value),asel=angleBox.querySelector("select");
     var ang=asel?asel.value:"";
     S.lastAdd[c.id]={type:fs.value,angle:ang,date:dt.value,time:tm.value};
@@ -897,7 +955,7 @@ function quickAdd(c){
       platforms:f?f.platforms.slice():[],
       dueDate:dt.value||TODAY,dueTime:tm.value,owner:"",status:"Not started",description:"",
       keywords:[],script:"",subtasks:[],createdAt:new Date().toISOString()})
-      .then(function(){S.focusAdd="c"+c.id;toast("Added to "+c.name)})
+      .then(function(){S.focusAdd="c"+c.id;render();toast("Added to "+c.name)})
       .catch(function(e){go.disabled=false;go.textContent="Add";toast(msgFor(e))});
   }
   go.onclick=add;
@@ -927,14 +985,21 @@ function quickAdd(c){
 
 function emptyHero(){
   var h=el("div","hero");
-  h.appendChild(el("h2",null,"No campaigns yet"));
+  h.appendChild(el("span","empty-symbol","▦"));
+  h.appendChild(el("p","eyebrow","A little structure. A clearer week."));
+  h.appendChild(el("h2",null,"Start with your first campaign"));
   h.appendChild(el("p",null,writable()
-    ?"Create a campaign, then add what ships and when. Every activity you date shows up here on the team calendar."
+    ?"Group related content around a launch, a topic or a goal. Then add activities to see the plan come together."
     :"Nothing has been planned yet. Once the marketing team adds campaigns, they appear here."));
   if(writable()){
-    var b=el("button","btn btn-s","+ New campaign");b.onclick=function(){openCampaign(null)};h.appendChild(b);
+    var steps=el("div","start-steps");steps.appendChild(el("span",null,"1  Create a campaign"));steps.appendChild(el("span",null,"2  Add your activities"));h.appendChild(steps);
+    var b=el("button","btn btn-p","Create first campaign");b.onclick=function(){openCampaign(null)};h.appendChild(b);
   }
   return h;
+}
+function noResults(title,message){
+  var box=el("div","no-results");box.appendChild(el("h2",null,title));box.appendChild(el("p",null,message));
+  var clear=el("button","btn btn-o","Clear search and filters");clear.onclick=resetFilters;box.appendChild(clear);return box;
 }
 
 /* ─── render root ───────────────────────────────────────── */
@@ -949,6 +1014,12 @@ function renderViews(){
     var b=el("button",null,v[1]);
     b.setAttribute("role","tab");
     b.setAttribute("aria-selected",on?"true":"false");
+    b.tabIndex=on?0:-1;
+    b.onkeydown=function(e){
+      if(["ArrowLeft","ArrowRight","Home","End"].indexOf(e.key)<0)return;
+      e.preventDefault();var index=VIEWS.indexOf(v),next=e.key==="Home"?0:e.key==="End"?VIEWS.length-1:(index+(e.key==="ArrowRight"?1:-1)+VIEWS.length)%VIEWS.length;
+      w.children[next].click();$("vsw").children[next].focus();
+    };
     b.onclick=function(){
       if(isC)S.view="campaigns";
       else{
@@ -973,18 +1044,16 @@ function clearDayExpand(){
 }
 function render(){
   renderViews();renderHead();
-  /* One primary action, and it is always the one this screen is for:
-     you make campaigns on Campaigns, and dated work on a calendar. */
-  var nb=$("new-act"),onCamps=S.view==="campaigns";
-  nb.textContent=onCamps?"New campaign":"New activity";
-  nb.onclick=onCamps?function(){openCampaign(null)}:function(){openActivity(null)};
-  nb.style.display=writable()?"":"none";
   var who=$("who");
   if(S.me){
     who.hidden=false;
     who.textContent=initials(S.me.name);
-    who.title=S.me.name+" · sign out";
+    who.title="Your account";who.setAttribute("aria-label","Your account: "+S.me.name);
   }else who.hidden=true;
+  renderMain();
+}
+function renderMain(){
+  var summary=document.querySelector("#head .psub");if(summary)summary.textContent=headSub();
   var main=$("main");clear(main);
   if(S.err){
     var b=el("div","banner");b.appendChild(el("span",null,"⚠"));
@@ -995,13 +1064,16 @@ function render(){
     var sb=el("div","banner");sb.appendChild(el("span",null,"◷"));
     sb.appendChild(el("span",null,"Still loading the team's campaigns…"));main.appendChild(sb);
   }
-  if(S.view==="calendar")renderCalendar(main);else renderCampaigns(main);
+  if(S.view==="calendar"&&(S.query||activeFilters().length)&&!visible().length&&!S.loading){
+    main.appendChild(noResults("No matching activities","Try another search or clear your filters."));
+  }else if(S.view==="calendar")renderCalendar(main);else renderCampaigns(main);
   if(S.focusAdd){
     var f=main.querySelector('[data-focus="'+S.focusAdd+'"]');
     S.focusAdd=null;
     if(f)f.focus();
   }
   paintNames();
+  labelIconControls(main);
 }
 
 /* resolve owner ids to names without re-rendering */
@@ -1024,30 +1096,79 @@ function paintNames(){
     }
     if(changed){
       var f=$("f-own");
-      if(f){var cur=f.value;renderFilters();var f2=$("f-own");if(f2)f2.value=cur}
+      if(f){var cur=f.value;renderHead();var f2=$("f-own");if(f2)f2.value=cur}
     }
   });
 }
 
 /* ─── overlay plumbing ──────────────────────────────────── */
-function closeOverlay(){clear($("overlay"));document.body.style.overflow=""}
-function overlay(node){
+var overlayState=null,fieldCount=0;
+function closeOverlay(force){
+  if(overlayState&&overlayState.dirty&&overlayState.dirty()&&force!==true){
+    var dialog=overlayState.node,old=dialog.querySelector(".discard-notice");
+    if(old){old.querySelector("button").focus();return}
+    var notice=el("div","discard-notice");notice.setAttribute("role","alert");
+    notice.appendChild(el("span",null,"You have unsaved changes."));
+    var keep=el("button","btn btn-o","Keep editing"),discard=el("button","btn btn-d","Discard changes");
+    keep.onclick=function(){notice.remove();var f=dialog.querySelector("input,textarea,select");if(f)f.focus()};
+    discard.onclick=function(){closeOverlay(true)};
+    notice.appendChild(keep);notice.appendChild(discard);dialog.querySelector(".p-foot").prepend(notice);keep.focus();return;
+  }
+  var previous=overlayState&&overlayState.previous;
+  clear($("overlay"));overlayState=null;document.body.style.overflow="";
+  document.querySelector(".topbar").inert=false;$("workspace").inert=false;
+  if(previous&&previous.isConnected)previous.focus();else if($("new-act")&&!$("new-act").hidden)$("new-act").focus();
+}
+function overlay(node,dirty){
+  overlayState={node:node,dirty:dirty,previous:document.activeElement};
   var o=$("overlay");clear(o);
   var sc=el("div","scrim");sc.onclick=closeOverlay;
   o.appendChild(sc);o.appendChild(node);
   document.body.style.overflow="hidden";
+  node.setAttribute("aria-modal","true");
+  document.querySelector(".topbar").inert=true;$("workspace").inert=true;
+  node.querySelectorAll(".p-head .x").forEach(function(b){b.setAttribute("aria-label","Close dialog")});
+  labelIconControls(node);
   if(!writable()){
     var ff=node.querySelectorAll("input,select,textarea,.pill,.chk");
     for(var i=0;i<ff.length;i++)ff[i].disabled=true;
   }
   var first=node.querySelector("input,select,textarea");if(first)setTimeout(function(){first.focus()},120);
 }
-document.addEventListener("keydown",function(e){if(e.key==="Escape")closeOverlay()});
+document.addEventListener("keydown",function(e){
+  if(e.key==="Escape"){if(!$("account-menu").hidden){closeAccount();$("who").focus()}else closeOverlay();return}
+  if(e.key==="Tab"&&overlayState){
+    var items=Array.from(overlayState.node.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary,[tabindex="0"]')).filter(function(n){return n.getClientRects().length});
+    var first=items[0],last=items[items.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}
+  }
+});
+window.addEventListener("beforeunload",function(e){if(overlayState&&overlayState.dirty&&overlayState.dirty()){e.preventDefault();e.returnValue=""}});
 
 function field(label,control,hintText,hintCls){
-  var w=el("div");w.appendChild(el("label",null,label));w.appendChild(control);
-  if(hintText)w.appendChild(el("div","hint"+(hintCls?" "+hintCls:""),hintText));
+  var w=el("div","field"),lab=el("label",null,label);lab.id="field-label-"+(++fieldCount);
+  var target=control.matches("input,select,textarea")?control:control.querySelector("input,select,textarea");
+  if(target){if(!target.id)target.id="field-control-"+fieldCount;lab.htmlFor=target.id}
+  else{control.setAttribute("role","group");control.setAttribute("aria-labelledby",lab.id)}
+  w.appendChild(lab);w.appendChild(control);
+  if(hintText){var hint=el("div","hint"+(hintCls?" "+hintCls:""),hintText);hint.id="field-hint-"+fieldCount;if(target)target.setAttribute("aria-describedby",hint.id);w.appendChild(hint)}
   return w;
+}
+function disclosure(title,description){
+  var details=el("details","form-section"),summary=el("summary");summary.appendChild(el("span",null,title));
+  if(description)summary.appendChild(el("small",null,description));details.appendChild(summary);
+  var content=el("div","section-body");details.appendChild(content);return {node:details,body:content};
+}
+function labelIconControls(scope){
+  scope.querySelectorAll("button.sub-x,button.sub-tgl,button.sub-chk,button.mark").forEach(function(b){if(b.title)b.setAttribute("aria-label",b.title)});
+}
+function confirmRemoval(host,message,remove){
+  if(host.querySelector(".inline-confirm"))return;
+  var row=el("div","inline-confirm");row.setAttribute("role","alert");row.appendChild(el("span",null,message));
+  var keep=el("button","btn btn-o","Keep item"),yes=el("button","btn btn-d","Remove item");
+  keep.onclick=function(){row.remove()};yes.onclick=function(){remove();row.remove()};
+  row.appendChild(keep);row.appendChild(yes);host.appendChild(row);keep.focus();
 }
 function input(type,val,ph){var i=el("input");i.type=type;i.value=val||"";if(ph)i.placeholder=ph;return i}
 function dropdown(opts,val,blank){
@@ -1059,32 +1180,41 @@ function dropdown(opts,val,blank){
 
 /* owner typeahead over the workspace */
 function ownerPicker(current,onPick){
-  var box=el("div","ac"),inp=input("text","","Search your team…"),menu=null;
+  var box=el("div","ac"),inp=input("text","","Search your team…"),menu=null,suppressQuery=false;
+  inp.setAttribute("role","combobox");inp.setAttribute("aria-autocomplete","list");inp.setAttribute("aria-expanded","false");
   if(current&&S.profiles[current]&&S.profiles[current].name)inp.value=S.profiles[current].name;
   else if(current)inp.value="Teammate";
   box.appendChild(inp);
-  function shut(){if(menu){menu.remove();menu=null}}
+  function shut(){if(menu){menu.remove();menu=null}inp.setAttribute("aria-expanded","false")}
   function show(list){
     shut();
-    if(!list.length)return;
-    menu=el("div","ac-menu");
+    menu=el("div","ac-menu");menu.id="owner-list-"+(++fieldCount);menu.setAttribute("role","listbox");menu.setAttribute("aria-label","Teammates");
+    inp.setAttribute("aria-controls",menu.id);inp.setAttribute("aria-expanded","true");
+    if(!list.length)menu.appendChild(el("p","owner-empty","No matching teammates. People appear here after their first sign-in."));
+    list.sort(function(a,b){return a.id===(S.me&&S.me.id)?-1:b.id===(S.me&&S.me.id)?1:0});
     list.forEach(function(p){
-      var b=el("button",null,p.name||"Someone");b.type="button";
-      b.onclick=function(){inp.value=p.name||"Someone";S.profiles[p.id]={name:p.name||""};onPick(p.id);shut()};
+      var b=el("button",null,(p.name||"Someone")+(p.id===(S.me&&S.me.id)?" (you)":""));b.type="button";b.setAttribute("role","option");b.setAttribute("aria-selected",String(current===p.id));
+      b.onclick=function(){current=p.id;inp.value=p.name||"Someone";S.profiles[p.id]={name:p.name||""};onPick(p.id);shut()};
       menu.appendChild(b);
     });
-    var cb=el("button",null,"— Unassigned —");cb.type="button";
-    cb.onclick=function(){inp.value="";onPick("");shut()};
+    var cb=el("button",null,"Leave unassigned");cb.type="button";cb.setAttribute("role","option");cb.setAttribute("aria-selected",String(!current));
+    cb.onclick=function(){current="";inp.value="";onPick("");shut()};
     menu.appendChild(cb);
     box.appendChild(menu);
+    menu.onkeydown=function(e){
+      var opts=Array.from(menu.querySelectorAll("button")),i=opts.indexOf(document.activeElement);
+      if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();opts[(i+(e.key==="ArrowDown"?1:-1)+opts.length)%opts.length].focus()}
+      if(e.key==="Escape"){e.stopPropagation();suppressQuery=true;shut();inp.focus();suppressQuery=false}
+    };
   }
   function query(q){
     if(!U||!U.search){shut();return}
     U.search(q).then(function(r){show(r||[])});
   }
-  inp.onfocus=function(){query("")};
+  inp.onfocus=function(){if(!suppressQuery)query("")};
   inp.oninput=function(){query(inp.value)};
-  inp.onblur=function(){setTimeout(shut,180)};
+  inp.onkeydown=function(e){if(e.key==="ArrowDown"&&menu){e.preventDefault();menu.querySelector("button").focus()}if(e.key==="Escape"){e.stopPropagation();shut()}};
+  box.addEventListener("focusout",function(){setTimeout(function(){if(!box.contains(document.activeElement))shut()},180)});
   if(!U||!U.search){inp.disabled=true;inp.placeholder="Team directory unavailable"}
   return box;
 }
@@ -1092,7 +1222,7 @@ function ownerPicker(current,onPick){
 /* ─── activity panel ────────────────────────────────────── */
 function openActivity(a,presetDate,presetCampaign,preset){
   if(!a&&!writable())return;
-  if(!a&&!S.campaigns.length){openCampaign(null);return}
+  if(!a&&!S.campaigns.length){openCampaign(null,function(c){openActivity(null,presetDate,c.id,preset)});return}
   var isNew=!a,pf=preset||{};
   var live=S.campaigns.filter(function(c){return c.status==="Live"});
   var d={
@@ -1107,8 +1237,9 @@ function openActivity(a,presetDate,presetCampaign,preset){
     owner:a?(a.owner||""):"",
     description:a?(a.description||""):"",
     keywords:a?(a.keywords||[]).slice():[],
-    script:a?(a.script||""):""
+    script:a?(a.script||""):"",useTemplate:false
   };
+  var initial=JSON.stringify(d);
   /* true while the platforms were filled in by the format, not by the user */
   var autoPlat=isNew&&!!(pf.platforms&&pf.platforms.length);
   var p=el("div","panel");p.setAttribute("role","dialog");p.setAttribute("aria-label",isNew?"New activity":"Activity");
@@ -1117,21 +1248,23 @@ function openActivity(a,presetDate,presetCampaign,preset){
   var xb=el("button","x","✕");xb.onclick=closeOverlay;head.appendChild(xb);
   p.appendChild(head);
   var body=el("div","p-body");p.appendChild(body);
+  body.appendChild(el("p","form-intro",isNew?"Start with the essentials. You can fill in the content details later.":"Update the plan, schedule or content for this activity."));
 
   var titleIn=input("text",d.title,"e.g. Topper interview — Akriti, AIR 12");
   titleIn.id="act-title";
   titleIn.oninput=function(){d.title=titleIn.value;validate()};
-  body.appendChild(field("Title",titleIn));
+  titleIn.required=true;body.appendChild(field("Activity title *",titleIn));
 
   var campSel=dropdown(S.campaigns.map(function(c){return[c.id,c.name]}),d.campaignId,"Choose a campaign");
   campSel.id="act-camp";
   campSel.onchange=function(){d.campaignId=campSel.value;validate()};
-  body.appendChild(field("Campaign",campSel));
+  campSel.required=true;body.appendChild(field("Campaign *",campSel));
 
   var fmtSel=formatSelect(d.type,"Not set");fmtSel.id="act-format";
   body.appendChild(field("Format",fmtSel));
+  var contentDetails=disclosure("Content details","Topic, platforms, notes & keywords");
   var angleWrap=el("div"),ctaWrap=el("div");
-  body.appendChild(angleWrap);body.appendChild(ctaWrap);
+  contentDetails.body.appendChild(angleWrap);contentDetails.body.appendChild(ctaWrap);
   function drawAngle(){
     clear(angleWrap);
     var f=formatById(d.type);
@@ -1163,6 +1296,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
       for(var i=0;i<bs.length;i++)bs[i].setAttribute("aria-pressed",d.platforms.indexOf(bs[i].textContent)>=0?"true":"false");
     }
     drawAngle();drawCta();
+    if(templateHint)templateHint.textContent=templateDescription();
   };
   drawAngle();drawCta();
 
@@ -1178,39 +1312,43 @@ function openActivity(a,presetDate,presetCampaign,preset){
     };
     pl.appendChild(b);
   });
-  body.appendChild(field("Platforms",pl,"One activity can ship to several places."));
+  contentDetails.body.appendChild(field("Platforms",pl,"Choose where this activity will appear."));
 
   var two=el("div","f2");
   var dd=input("date",d.dueDate);dd.id="act-date";
   var dt=input("time",d.dueTime);dt.id="act-time";
-  var dw=field("End date",dd),tw=field("End time (optional)",dt,"Blank = anytime that day. A live or a broadcast needs one.");
+  dd.required=true;
+  var dw=field("Due date *",dd),tw=field("Time (optional)",dt,"Leave blank for any time that day.");
   two.appendChild(dw);two.appendChild(tw);
   body.appendChild(two);
   var rangeHint=el("div","hint warn");rangeHint.hidden=true;body.appendChild(rangeHint);
   dd.oninput=function(){d.dueDate=dd.value;validate()};
   dt.oninput=function(){d.dueTime=dt.value};
 
-  body.appendChild(field("Owner",ownerPicker(d.owner,function(id){d.owner=id}),"Unowned work is the first thing to slip."));
+  body.appendChild(field("Owner (optional)",ownerPicker(d.owner,function(id){d.owner=id})));
+  body.appendChild(contentDetails.node);
 
   var ta=el("textarea");ta.id="act-desc";ta.value=d.description;ta.className="short-ta";
   ta.placeholder="One or two lines: what this is and why.";
   ta.oninput=function(){d.description=ta.value};
-  body.appendChild(field("Short description",ta));
+  contentDetails.body.appendChild(field("Notes",ta));
 
   var kw=input("text",d.keywords.join(", "),"norcet, aiims, high yield…");
   kw.id="act-keywords";
   kw.oninput=function(){
     d.keywords=kw.value.split(",").map(function(x){return x.trim()}).filter(Boolean);
   };
-  body.appendChild(field("Keywords",kw,"Comma separated. Feeds the title, description and tags when it goes up."));
+  contentDetails.body.appendChild(field("Keywords",kw,"Separate keywords with commas."));
 
   var sc=el("textarea");sc.id="act-script";sc.value=d.script;sc.className="script-ta";
   sc.placeholder="Hook…\n\nBody…\n\nCTA…";
   sc.oninput=function(){d.script=sc.value};
   var scriptField=field("Script",sc,"The spoken or written script. Long form, shorts, reels, broadcasts — whatever this one needs.");
+  var scriptSection=disclosure("Script",d.script?"View or edit the draft":"Add a draft when you’re ready");scriptSection.body.appendChild(scriptField);
 
   /* status + assets write immediately on an existing activity */
   if(!isNew){
+    body.appendChild(el("p","autosave-note","Status and checklist changes save automatically."));
     var sp=el("div","pills");
     STATUSES.forEach(function(st){
       var b=el("button","pill",st);b.type="button";
@@ -1261,7 +1399,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
         ti.placeholder="Name this item…";ti.setAttribute("data-pfocus","t"+s.id);
         ti.onchange=function(){
           var v=ti.value.trim();
-          if(!v&&!group){dropSub(s.id);return}
+          if(!v){ti.value=s.title;toast("Give this item a name, or use Remove to delete it.");return}
           patchSub(s.id,{title:v||s.title});
         };
         r.appendChild(ti);
@@ -1279,7 +1417,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
         }
         var x=el("button","sub-x","✕");
         x.title=group?"Remove this group and everything in it":"Remove";
-        x.onclick=function(){dropSub(s.id)};
+        x.onclick=function(){confirmRemoval(r,group?"Remove this group and everything inside it?":"Remove this checklist item?",function(){dropSub(s.id)})};
         r.appendChild(x);
         var two=el("div","ps-2");
         var pf2=dropdown(PLATFORMS.map(function(p){return[p[0],p[0]]}),s.platform||"","Platform…");
@@ -1346,16 +1484,25 @@ function openActivity(a,presetDate,presetCampaign,preset){
         if(f)f.focus();
       }
       paintNames();
+      labelIconControls(sbox);
     };
     drawSubs(null);
-    body.appendChild(field("Subtasks",sbox,"A step carries its own type, owner and date. Add as many thumbnails, community messages or reminders as this one needs."));
+    var checklist=disclosure("Checklist",subDone(a)+" of "+subTotal(a)+" items complete");checklist.node.open=true;
+    checklist.body.appendChild(sbox);body.appendChild(checklist.node);
   }else{
-    body.appendChild(field("Subtasks",el("div","sub-empty","Create the activity first, then reopen it to break the work into subtasks.")));
+    var checklist=disclosure("Checklist","Start with a suggested set of steps");
+    var checkLabel=el("label","check-label"),templateToggle=input("checkbox");templateToggle.id="act-template";
+    templateToggle.onchange=function(){d.useTemplate=templateToggle.checked};
+    checkLabel.appendChild(templateToggle);checkLabel.appendChild(document.createTextNode("Add suggested checklist"));
+    var templateHint=el("p","hint",templateDescription());
+    checklist.body.appendChild(checkLabel);checklist.body.appendChild(templateHint);body.appendChild(checklist.node);
   }
-  body.appendChild(scriptField);
+  body.appendChild(scriptSection.node);
+  function templateDescription(){return (STEPS[d.type]||["Script","Edit","Review"]).map(function(s){return typeof s==="string"?s:s.t}).join(" · ")}
 
   var foot=el("div","p-foot");
   var err=el("div","hint err");err.hidden=true;
+  var requiredNote=el("p","required-note");foot.appendChild(requiredNote);
   var save=el("button","btn btn-p",isNew?"Create activity":"Save changes");
   save.onclick=function(){submit()};
   if(!isNew&&writable()){
@@ -1368,7 +1515,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
       var yes=el("button","btn btn-d","Delete");
       yes.style.marginLeft="auto";
       yes.onclick=function(){
-        db.doc("activities/"+a.id).delete().then(function(){closeOverlay();toast("Activity deleted")})
+        db.doc("activities/"+a.id).delete().then(function(){closeOverlay(true);toast("Activity deleted")})
           .catch(function(e){showErr(e)});
       };
       var no=el("button","btn btn-o","Cancel");
@@ -1378,6 +1525,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
     };
     foot.appendChild(del);
   }
+  var cancel=el("button","btn btn-o","Cancel");cancel.onclick=function(){closeOverlay()};foot.appendChild(cancel);
   save.classList.add("sp");
   foot.appendChild(save);
   p.appendChild(foot);
@@ -1387,10 +1535,12 @@ function openActivity(a,presetDate,presetCampaign,preset){
   function validate(){
     var ok=d.title.trim()&&d.campaignId&&d.dueDate;
     save.disabled=!ok||!writable();
+    var missing=[];if(!d.title.trim())missing.push("a title");if(!d.campaignId)missing.push("a campaign");if(!d.dueDate)missing.push("a due date");
+    requiredNote.textContent=ok?(isNew?"Optional details can be added later.":"Save changes to update the details above."):"Add "+missing.join(", ")+" to continue.";
     var c=campById(d.campaignId);
     if(c&&d.dueDate&&(d.dueDate<c.startDate||d.dueDate>c.endDate)){
       rangeHint.hidden=false;
-      rangeHint.textContent="Outside the campaign window ("+fmtShort(c.startDate)+" → "+fmtLong(c.endDate)+"). Saved anyway.";
+      rangeHint.textContent="This date is outside the campaign window ("+fmtShort(c.startDate)+" → "+fmtLong(c.endDate)+"). You can still save it.";
     }else rangeHint.hidden=true;
     return ok;
   }
@@ -1401,16 +1551,16 @@ function openActivity(a,presetDate,presetCampaign,preset){
       platforms:d.platforms,dueDate:d.dueDate,dueTime:d.dueTime,owner:d.owner,
       description:d.description.trim(),keywords:d.keywords,script:d.script};
     if(isNew){
-      payload.status="Not started";payload.assets={};payload.subtasks=[];
+      payload.status="Not started";payload.assets={};payload.subtasks=d.useTemplate?buildSteps(STEPS[d.type]||["Script","Edit","Review"]):[];
       payload.createdAt=new Date().toISOString();
-      db.collection("activities").add(payload).then(function(){closeOverlay();toast("Activity added to "+fmtLong(d.dueDate))})
+      db.collection("activities").add(payload).then(function(){closeOverlay(true);toast("Activity added to "+fmtLong(d.dueDate))})
         .catch(showErr);
     }else{
-      db.doc("activities/"+a.id).update(payload).then(function(){closeOverlay();toast("Changes saved")}).catch(showErr);
+      db.doc("activities/"+a.id).update(payload).then(function(){closeOverlay(true);toast("Changes saved")}).catch(showErr);
     }
   }
   validate();
-  overlay(p);
+  overlay(p,function(){return JSON.stringify(d)!==initial});
 }
 
 function setField(id,patch,ok){
@@ -1428,23 +1578,26 @@ function msgFor(e){
 }
 
 /* ─── campaign modal ────────────────────────────────────── */
-function openCampaign(c){
+function openCampaign(c,afterCreate){
   if(!writable())return;
   var isNew=!c;
   var d={name:c?c.name:"",goal:c?(c.goal||""):"",startDate:c?c.startDate:TODAY,
     endDate:c?c.endDate:addDays(TODAY,14),owner:c?(c.owner||""):"",status:c?c.status:"Planning"};
+  var initial=JSON.stringify(d);
   var m=el("div","modal");m.setAttribute("role","dialog");m.setAttribute("aria-label",isNew?"New campaign":"Edit campaign");
   var head=el("div","p-head");head.appendChild(el("h2",null,isNew?"New campaign":"Edit campaign"));
   var xb=el("button","x","✕");xb.onclick=closeOverlay;head.appendChild(xb);m.appendChild(head);
   var body=el("div","p-body");m.appendChild(body);
+  body.appendChild(el("p","form-intro",isNew?"A campaign groups related content around one goal. Add your activities next.":"Keep the campaign’s dates, goal and ownership up to date."));
 
   var nm=input("text",d.name,"e.g. NORCET 11 launch push");nm.id="camp-name";
   nm.oninput=function(){d.name=nm.value;validate()};
-  body.appendChild(field("Campaign name",nm));
+  nm.required=true;body.appendChild(field("Campaign name *",nm));
+  var more=disclosure("Campaign details","Goal, owner & status");
 
   var gl=input("text",d.goal,"What is this campaign for?");gl.id="camp-goal";
   gl.oninput=function(){d.goal=gl.value};
-  body.appendChild(field("Goal (optional)",gl));
+  more.body.appendChild(field("Goal (optional)",gl));
 
   var two=el("div","f2");
   var sd=input("date",d.startDate);sd.id="camp-start";
@@ -1456,7 +1609,7 @@ function openCampaign(c){
   sd.oninput=function(){d.startDate=sd.value;validate()};
   ed.oninput=function(){d.endDate=ed.value;validate()};
 
-  body.appendChild(field("Owner",ownerPicker(d.owner,function(id){d.owner=id})));
+  more.body.appendChild(field("Owner (optional)",ownerPicker(d.owner,function(id){d.owner=id})));
 
   var sp=el("div","pills");
   CSTATUS.forEach(function(st){
@@ -1466,9 +1619,10 @@ function openCampaign(c){
       for(var i=0;i<all.length;i++)all[i].setAttribute("aria-pressed",all[i].textContent===st)};
     sp.appendChild(b);
   });
-  body.appendChild(field("Status",sp));
+  more.body.appendChild(field("Status",sp));body.appendChild(more.node);if(!isNew)more.node.open=true;
 
   var foot=el("div","p-foot");
+  var requiredNote=el("p","required-note");foot.appendChild(requiredNote);
   var err=el("div","hint err");err.hidden=true;body.appendChild(err);
   var save=el("button","btn btn-p sp",isNew?"Create campaign":"Save changes");
   if(!isNew){
@@ -1477,7 +1631,7 @@ function openCampaign(c){
     del.onclick=function(){
       if(crow)return;
       crow=el("div");crow.style.cssText="display:flex;gap:8px;align-items:center;width:100%;flex-wrap:wrap";
-      crow.appendChild(el("span","hint err",n?"Delete this campaign and its "+n+" activities?":"Delete this campaign?"));
+      crow.appendChild(el("span","hint err",n?"Delete this campaign and its "+n+(n===1?" activity?":" activities?"):"Delete this campaign?"));
       var yes=el("button","btn btn-d","Delete");yes.style.marginLeft="auto";
       yes.onclick=function(){
         yes.disabled=true;yes.textContent="Deleting…";
@@ -1485,7 +1639,7 @@ function openCampaign(c){
         var chain=Promise.resolve();
         kids.forEach(function(a){chain=chain.then(function(){return db.doc("activities/"+a.id).delete()})});
         chain.then(function(){return db.doc("campaigns/"+c.id).delete()})
-          .then(function(){closeOverlay();toast("Campaign deleted")})
+          .then(function(){closeOverlay(true);toast("Campaign deleted")})
           .catch(function(e){err.hidden=false;err.textContent=msgFor(e);yes.disabled=false;yes.textContent="Delete"});
       };
       var no=el("button","btn btn-o","Cancel");no.onclick=function(){crow.remove();crow=null};
@@ -1493,6 +1647,7 @@ function openCampaign(c){
     };
     foot.appendChild(del);
   }
+  var cancel=el("button","btn btn-o","Cancel");cancel.onclick=function(){closeOverlay()};foot.appendChild(cancel);
   save.onclick=function(){submit()};
   foot.appendChild(save);m.appendChild(foot);
 
@@ -1501,6 +1656,7 @@ function openCampaign(c){
     derr.hidden=!bad;
     if(bad)derr.textContent="End date can't be before the start date.";
     save.disabled=!(d.name.trim()&&d.startDate&&d.endDate)||bad;
+    requiredNote.textContent=save.disabled?"Add a campaign name and valid dates to continue.":isNew?"Next: add activities to your campaign.":"Changes apply to this campaign.";
     return !save.disabled;
   }
   function submit(){
@@ -1508,7 +1664,16 @@ function openCampaign(c){
     save.disabled=true;save.textContent="Saving…";err.hidden=true;
     var payload={name:d.name.trim(),goal:d.goal.trim(),startDate:d.startDate,endDate:d.endDate,
       owner:d.owner,status:d.status};
-    var done=function(){closeOverlay();toast(isNew?"Campaign created":"Campaign updated")};
+    var done=function(ref){
+      closeOverlay(true);
+      if(isNew){
+        var created=Object.assign({id:ref.id},payload);
+        if(!campById(ref.id)){S.campaigns.push(created);sortCampaigns()}
+        if(afterCreate){afterCreate(created);return}
+        S.view="campaigns";S.query="";resetFilterValues();S.expanded["c"+ref.id]=true;S.focusAdd="c"+ref.id;render();
+      }
+      toast(isNew?"Campaign created. Add your first activity below.":"Campaign updated");
+    };
     var fail=function(e){err.hidden=false;err.textContent=msgFor(e);save.disabled=false;save.textContent=isNew?"Create campaign":"Save changes"};
     if(isNew){
       payload.colour=CCOLORS[S.campaigns.length%CCOLORS.length];
@@ -1519,7 +1684,7 @@ function openCampaign(c){
     }
   }
   validate();
-  overlay(m);
+  overlay(m,function(){return JSON.stringify(d)!==initial});
 }
 
 /* ─── shell wiring ──────────────────────────────────────── */
@@ -1551,7 +1716,10 @@ function emailAllowed(e){
 
 /* The sign-in screen. One job, one button. */
 function showGate(kind,extra){
+  if(overlayState)closeOverlay(true);
+  document.querySelector(".topbar").inert=true;$("workspace").inert=true;
   var g=$("gate");clear(g);g.hidden=false;
+  g.setAttribute("role","dialog");g.setAttribute("aria-modal","true");g.setAttribute("aria-label","Sign in to Content calendar");
   var c=el("div","gate-card");
   c.appendChild(el("i","gate-mark"));
   if(kind==="config"){
@@ -1585,6 +1753,7 @@ function showGate(kind,extra){
     c.appendChild(b);
   }
   g.appendChild(c);
+  var action=g.querySelector("button,a");if(action)action.focus();
 }
 
 function startData(){
@@ -1644,7 +1813,18 @@ function makeUser(){
   };
 }
 
-$("who").onclick=function(){if(auth)auth.signOut()};
+function closeAccount(){$("account-menu").hidden=true;$("who").setAttribute("aria-expanded","false")}
+$("who").onclick=function(){
+  var menu=$("account-menu");
+  if(!menu.hidden){closeAccount();return}
+  clear(menu);menu.appendChild(el("strong",null,S.me?S.me.name:"Your account"));
+  menu.appendChild(el("span","account-email",S.me?S.me.email:""));
+  menu.appendChild(el("span","account-access","NPrep team workspace"));
+  var signOut=el("button","account-signout","Sign out");
+  signOut.onclick=function(){closeAccount();if(auth)auth.signOut()};menu.appendChild(signOut);
+  menu.hidden=false;$("who").setAttribute("aria-expanded","true");
+};
+document.addEventListener("click",function(e){if(!e.target.closest(".account"))closeAccount()});
 
 (function boot(){
   var cfg=window.FIREBASE_CONFIG;
@@ -1668,6 +1848,7 @@ $("who").onclick=function(){if(auth)auth.signOut()};
     }
     if(!emailAllowed(u.email)){S.me=null;render();showGate("denied",u.email);return;}
     $("gate").hidden=true;
+    document.querySelector(".topbar").inert=false;$("workspace").inert=false;
     S.me={id:u.uid,name:u.displayName||u.email,email:u.email};
     S.canWrite=true;
     U=makeUser();

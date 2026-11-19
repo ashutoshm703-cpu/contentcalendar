@@ -13,20 +13,25 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to calendar</a>
 
-<div class="topbar"><div class="wrap">
-  <div class="logo"><i></i><span>Content calendar</span></div>
-  <div class="vsw" id="vsw" role="tablist"></div>
-  <button class="btn btn-p" id="new-act">New activity</button>
-  <button class="who" id="who" hidden></button>
-</div></div>
+<header class="topbar">
+  <div class="wrap topbar-main">
+    <div class="logo"><span class="brandmark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="5" width="16" height="16" rx="3"/><path d="M8 3v4m8-4v4M4 11h16m-11 4h2m2 0h2m-6 3h2"/></svg></span><span>Content calendar<small>NPrep workspace</small></span></div>
+    <div class="account">
+      <button class="who" id="who" aria-label="Your account" aria-haspopup="true" aria-expanded="false" aria-controls="account-menu" hidden></button>
+      <div class="account-menu" id="account-menu" hidden></div>
+    </div>
+  </div>
+  <div class="wrap"><nav class="vsw" id="vsw" role="tablist" aria-label="Calendar views"></nav></div>
+</header>
 
-<div class="wrap">
+<main class="wrap" id="workspace">
   <div id="head"></div>
-  <div id="main"></div>
-</div>
+  <div id="main" tabindex="-1"></div>
+</main>
 <div id="overlay"></div>
-<div id="toasts"></div>
+<div id="toasts" role="status" aria-live="polite" aria-atomic="true"></div>
 <div id="gate" hidden></div>
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
