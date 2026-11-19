@@ -30,7 +30,7 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   filters apply to activities. Empty results offer a clear reset action.
 - Checklist removal asks for confirmation. Clearing an item's title does not
   delete it. Campaign and activity deletion also require an explicit choice.
-- Select a subtask name or **Edit details** to edit its name, description, owner,
+- Select a subtask name or its **pencil icon** to edit its name, description, owner,
   due date, platform and type. **Save subtask** stores the details in Firestore.
   Nested subtasks and groups support descriptions too. Opening subtask details
   from an activity preserves the unfinished activity form underneath.

@@ -1246,7 +1246,13 @@ function ownerPicker(current,onPick){
 
 /* Subtask details are saved together; the parent activity draft stays intact. */
 function subtaskEditButton(a,s,onSaved){
-  var edit=el("button","sub-edit","Edit details");
+  var edit=el("button","sub-edit");edit.title="Edit subtask";
+  var pencil=document.createElementNS("http://www.w3.org/2000/svg","svg");
+  pencil.setAttribute("viewBox","0 0 24 24");pencil.setAttribute("width","16");pencil.setAttribute("height","16");
+  pencil.setAttribute("fill","none");pencil.setAttribute("stroke","currentColor");pencil.setAttribute("stroke-width","1.75");
+  pencil.setAttribute("stroke-linecap","round");pencil.setAttribute("stroke-linejoin","round");pencil.setAttribute("aria-hidden","true");pencil.setAttribute("focusable","false");
+  var stroke=document.createElementNS("http://www.w3.org/2000/svg","path");stroke.setAttribute("d","M16 4a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4L16 4Z M14 6l3 3");
+  pencil.appendChild(stroke);edit.appendChild(pencil);
   edit.setAttribute("aria-label","Edit details for "+(s.title||"Untitled subtask"));
   edit.onclick=function(){openSubtask(a,s,onSaved)};return edit;
 }

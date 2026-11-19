@@ -265,7 +265,7 @@ textarea{resize:vertical;min-height:76px;font-weight:300;line-height:1.6}
 .sub-t.done{text-decoration:line-through;color:var(--text-3)}
 .sub-title-button{text-align:left;padding:4px 0;cursor:pointer;white-space:normal;line-height:1.5}
 .sub-title-button:hover{color:var(--text);text-decoration:underline;text-underline-offset:3px}
-.sub-edit{font-size:11px;font-weight:500;color:var(--text-2);border:1px solid var(--line-2);border-radius:6px;padding:6px 9px;flex:none;background:var(--surface)}
+.sub-edit{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;color:var(--text-2);border:1px solid var(--line);border-radius:6px;padding:0;flex:none;background:var(--surface)}
 .sub-edit:hover{background:var(--ice);color:var(--text)}
 .sub-description{flex:1 1 100%;width:100%;font-size:12px;line-height:1.7;color:var(--text-2);white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;margin:2px 0 5px;order:2}
 .subtask-description-input{min-height:135px;font-weight:400}
