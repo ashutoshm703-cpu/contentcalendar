@@ -1,0 +1,37 @@
+rules_version = '2';
+
+// Paste this into Firebase console → Firestore Database → Rules → Publish.
+//
+// Everything here is gated on one thing: a signed-in Google account whose
+// verified email is on the nprep.in domain. The web config in the repository
+// is public; this file is what actually protects the data.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function nprep() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower().matches('.*@nprep[.]in');
+    }
+
+    // The plan itself: anyone on the team reads and writes it.
+    match /campaigns/{campaignId} {
+      allow read, write: if nprep();
+    }
+    match /activities/{activityId} {
+      allow read, write: if nprep();
+    }
+
+    // The roster, so owner names resolve. You may only write your own row.
+    match /users/{uid} {
+      allow read: if nprep();
+      allow write: if nprep() && request.auth.uid == uid;
+    }
+
+    // Nothing else is reachable.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
