@@ -51,6 +51,13 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   **← / →** change nesting. Moves preserve step details, prevent loops,
   and respect the three-level limit. Choose **Save SOP** to keep the new order;
   existing activity checklists retain their current order.
+- Add SOP items directly in **Add a step…** or **Add a subtask…** beneath an
+  expanded group. Press **Enter** or choose **Add** to insert the item and keep
+  typing the next one. **+ Add step** in the checklist heading focuses the
+  top-level add field. Enter on an existing step opens the add field immediately
+  after that step at the same level. A typed item is included by **Save SOP**
+  even if Enter hasn't been pressed; empty add fields don't block saving. To
+  start a new group from a leaf, choose **⋯ → Add subtask** and type beneath it.
 - Names are compared without case differences, Unicode presentation differences,
   or repeated/leading/trailing spaces. Saves reserve the normalized name in a
   Firestore transaction so concurrent saves cannot claim the same name. Renaming

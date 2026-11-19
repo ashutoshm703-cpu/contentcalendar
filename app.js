@@ -1106,15 +1106,33 @@ function openSopRule(rule,onSaved){
   ui.body.appendChild(field("SOP name *",name));var conditionsGrid=el("div","sop-condition-grid");conditionsGrid.appendChild(field("Platform *",platform));conditionsGrid.appendChild(field("Content format *",format));ui.body.appendChild(conditionsGrid);ui.body.appendChild(topicWrap);
   function drawTopic(){clear(topicWrap);var topic=sopTopicSelect(d.format,d.angle);topic.onchange=function(){d.angle=topic.value};topicWrap.appendChild(field("Topic / category",topic,"Any topic matches every topic within the selected format."))}
   var source=dropdown([["","Build or edit the checklist below"]].concat(S.activities.filter(function(a){return (a.subtasks||[]).length}).map(function(a){var c=campById(a.campaignId);return[a.id,a.title+" · "+fmtShort(a.dueDate)+(c?" · "+c.name:"")]})),"",null);
-  source.onchange=function(){var a=S.activities.find(function(x){return x.id===source.value});if(!a)return;d.nodes=copyNodes(a.subtasks);d.anchorDate=a.dueDate;d.platform=(a.platforms||[])[0]||d.platform;d.format=a.type||d.format;d.angle=a.angle||"";platform.value=d.platform;format.value=d.format;drawTopic();drawBuilder();validate()};
+  source.onchange=function(){var a=S.activities.find(function(x){return x.id===source.value});if(!a)return;d.nodes=copyNodes(a.subtasks);composerDrafts={};d.anchorDate=a.dueDate;d.platform=(a.platforms||[])[0]||d.platform;d.format=a.type||d.format;d.angle=a.angle||"";platform.value=d.platform;format.value=d.format;drawTopic();drawBuilder();validate()};
   var importSection=disclosure("Start from a checklist","Optional: copy an activity or use suggested steps");importSection.body.appendChild(field("Activity checklist",source,"Copies the steps so you can edit them here."));ui.body.appendChild(importSection.node);
-  var suggested=el("button","tpl-btn","Use suggested checklist for this format");suggested.onclick=function(){d.nodes=buildSteps(STEPS[d.format]||["Script","Edit","Review"]);d.anchorDate="";drawBuilder();validate()};importSection.body.appendChild(suggested);
-  var checklistHeading=el("div","sop-checklist-heading");checklistHeading.appendChild(el("h3",null,"Checklist"));var stepCount=el("span","sop-step-count");checklistHeading.appendChild(stepCount);ui.body.appendChild(checklistHeading);
-  var reorderHelp=el("p","hint sop-reorder-help","Drag to reorder. Use ⋯ to move, nest or remove a step.");ui.body.appendChild(reorderHelp);
+  var suggested=el("button","tpl-btn","Use suggested checklist for this format");suggested.onclick=function(){d.nodes=buildSteps(STEPS[d.format]||["Script","Edit","Review"]);composerDrafts={};d.anchorDate="";drawBuilder();validate()};importSection.body.appendChild(suggested);
+  var checklistHeading=el("div","sop-checklist-heading");checklistHeading.appendChild(el("h3",null,"Checklist"));var stepCount=el("span","sop-step-count");checklistHeading.appendChild(stepCount);
+  var addStep=el("button","sop-header-add","+ Add step");addStep.type="button";addStep.onclick=function(){startAdding(null)};checklistHeading.appendChild(addStep);ui.body.appendChild(checklistHeading);
+  var reorderHelp=el("p","hint sop-reorder-help","Type below a group to add subtasks. Press Enter to keep adding. Drag to reorder.");ui.body.appendChild(reorderHelp);
   var moveAnnouncement=el("p","hint sop-move-status");moveAnnouncement.setAttribute("role","status");moveAnnouncement.setAttribute("aria-live","polite");
   ui.body.appendChild(builder);ui.body.appendChild(moveAnnouncement);ui.body.appendChild(hint);
   var save=el("button","btn btn-p sp","Save SOP");
-  var draggedId=null,collapsed={};
+  var draggedId=null,collapsed={},composerDrafts={};
+  function composerKey(parentId){return parentId||"root"}
+  function composerDraft(parentId){var key=composerKey(parentId);return composerDrafts[key]||(composerDrafts[key]={text:"",afterId:null})}
+  function startAdding(parentId,afterId){
+    var draft=composerDraft(parentId);draft.afterId=afterId||null;
+    if(parentId)collapsed[parentId]=false;
+    drawBuilder({composer:composerKey(parentId)});
+  }
+  function commitDraft(parentId,focus){
+    var draft=composerDraft(parentId),text=draft.text.trim();if(!text)return false;
+    if(parentId&&!nodeById(d.nodes,parentId))return false;
+    var fresh=newNode(text,""),position=draft.afterId?sopNodePosition(d.nodes,draft.afterId):null;
+    if(position&&((position.parent&&position.parent.id)||null)===(parentId||null))d.nodes=insertAfter(d.nodes,draft.afterId,fresh);
+    else d.nodes=addChild(d.nodes,parentId,fresh);
+    draft.text="";draft.afterId=fresh.id;
+    if(focus){drawBuilder({composer:composerKey(parentId)});validate();moveAnnouncement.textContent="Added "+text+". Type the next "+(parentId?"subtask":"step")+"."}
+    return true;
+  }
   function moveStep(id,target,placement){
     var next=moveSopNode(d.nodes,id,target,placement);if(next===d.nodes)return false;
     var title=nodeById(next,id).title||"Untitled step";d.nodes=next;draggedId=null;
@@ -1128,8 +1146,17 @@ function openSopRule(rule,onSaved){
     clear(builder);builder.classList.remove("is-dragging");
     function total(nodes){return nodes.reduce(function(count,n){return count+1+total(kids(n))},0)}
     stepCount.textContent=total(d.nodes)+" steps";
-    function rows(nodes,depth){nodes.forEach(function(n,index){
-      var group=kids(n).length>0,row=el("div","sop-step-row"+(group?" is-group":""));
+    function composer(parentId,depth){
+      var draft=composerDraft(parentId),row=el("div","sop-add-composer");row.style.setProperty("--step-depth",depth);
+      var plus=el("span","sop-composer-plus","+");plus.setAttribute("aria-hidden","true");row.appendChild(plus);
+      var entry=input("text",draft.text,parentId?"Add a subtask…":"Add a step…");entry.setAttribute("aria-label",parentId?"New subtask in "+(nodeById(d.nodes,parentId).title||"untitled group"):"New SOP step");entry.setAttribute("data-sop-composer",composerKey(parentId));entry.enterKeyHint="next";
+      var add=el("button","sop-composer-add","Add");add.type="button";add.disabled=!draft.text.trim();add.setAttribute("aria-label",parentId?"Add subtask to "+(nodeById(d.nodes,parentId).title||"untitled group"):"Add SOP step");
+      entry.oninput=function(){draft.text=entry.value;add.disabled=!draft.text.trim();validate()};
+      entry.onkeydown=function(e){if(e.key==="Enter"&&!e.isComposing){e.preventDefault();commitDraft(parentId,true)}};
+      add.onclick=function(){commitDraft(parentId,true)};row.appendChild(entry);row.appendChild(add);builder.appendChild(row);
+    }
+    function rows(nodes,depth,parentId){nodes.forEach(function(n,index){
+      var group=kids(n).length>0||!!composerDrafts[n.id],row=el("div","sop-step-row"+(group?" is-group":""));
       row.style.setProperty("--step-depth",depth);row.setAttribute("data-sop-depth",depth);row.setAttribute("data-sop-row",n.id);
       var handle=el("button","sop-drag-handle","⠿");handle.type="button";handle.draggable=true;handle.title="Drag to reorder. Arrow keys move this step; left/right changes nesting.";
       handle.setAttribute("aria-label","Drag SOP subtask "+(n.title||"untitled step"));handle.setAttribute("data-move-control","handle");
@@ -1150,7 +1177,8 @@ function openSopRule(rule,onSaved){
         var toggle=el("button","sop-group-toggle",collapsed[n.id]?"▸":"▾");toggle.type="button";toggle.setAttribute("aria-label",(collapsed[n.id]?"Expand":"Collapse")+" group "+(n.title||"untitled step"));toggle.setAttribute("aria-expanded",String(!collapsed[n.id]));toggle.setAttribute("data-move-control","toggle");
         toggle.onclick=function(){collapsed[n.id]=!collapsed[n.id];drawBuilder({id:n.id,control:"toggle"})};row.appendChild(toggle);
       }else{var spacer=el("span","sop-group-spacer");spacer.setAttribute("aria-hidden","true");row.appendChild(spacer)}
-      var title=input("text",n.title,"Untitled step");title.setAttribute("aria-label","Subtask title");title.setAttribute("data-sop-node",n.id);title.oninput=function(){d.nodes=patchNode(d.nodes,n.id,{title:title.value});validate()};row.appendChild(title);
+      var title=input("text",n.title,"Untitled step");title.setAttribute("aria-label","Subtask title");title.setAttribute("data-sop-node",n.id);title.oninput=function(){d.nodes=patchNode(d.nodes,n.id,{title:title.value});validate()};
+      title.onkeydown=function(e){if(e.key==="Enter"&&!e.isComposing){e.preventDefault();if(title.value.trim())startAdding(parentId,n.id)}};row.appendChild(title);
       var count=el("span","sop-group-count",group?String(kids(n).length):"");if(group)count.title=kids(n).length+" nested steps";row.appendChild(count);
       var actions=el("button","sop-actions-trigger","⋯");actions.type="button";actions.title="Step actions";actions.setAttribute("aria-label","Actions for SOP step "+(n.title||"untitled step"));actions.setAttribute("aria-haspopup","menu");actions.setAttribute("aria-expanded","false");row.appendChild(actions);
       var menu=el("div","sop-actions-popover");menu.setAttribute("popover","auto");menu.setAttribute("role","menu");menu.setAttribute("aria-label","Actions for "+(n.title||"untitled step"));
@@ -1166,7 +1194,7 @@ function openSopRule(rule,onSaved){
       moveCommand("Nest under previous step","Move inside previous step:","↳",nodes[index-1],"inside");
       moveCommand("Move out one level","Move out one level:","↰",sopNodePosition(d.nodes,n.id).parent,"after");
       var divider=el("div","sop-menu-divider");divider.setAttribute("role","separator");menu.appendChild(divider);
-      command("Add nested step","Add nested subtask under "+(n.title||"untitled step"),"+",function(){var fresh=newNode("","");d.nodes=addChild(d.nodes,n.id,fresh);collapsed[n.id]=false;drawBuilder(fresh.id);validate()},depth>=MAXDEPTH-1);
+      command("Add subtask","Add nested subtask under "+(n.title||"untitled step"),"+",function(){startAdding(n.id)},depth>=MAXDEPTH-1);
       command("Remove step","Remove SOP subtask "+(n.title||"untitled step"),"−",function(){d.nodes=removeNode(d.nodes,n.id);drawBuilder();validate();moveAnnouncement.textContent="Step removed. Save SOP to keep this change."},false,true);
       menu.ontoggle=function(){actions.setAttribute("aria-expanded",String(menu.matches(":popover-open")))};
       menu.onkeydown=function(e){
@@ -1190,24 +1218,26 @@ function openSopRule(rule,onSaved){
       row.ondragover=function(e){var placement=dropPlacement(e);if(!canDrop(n.id,placement))return;e.preventDefault();e.dataTransfer.dropEffect="move";clearDrop();row.classList.add("drop-"+placement)};
       row.ondragleave=function(e){if(!row.contains(e.relatedTarget))row.classList.remove("drop-before","drop-after","drop-inside")};
       row.ondrop=function(e){e.preventDefault();e.stopPropagation();var placement=dropPlacement(e);if(draggedId)moveStep(draggedId,n.id,placement)};
-      builder.appendChild(row);if(!collapsed[n.id])rows(kids(n),depth+1);
-    })}rows(d.nodes,0);
-    var add=el("button","sop-add-step","+ Add step");add.type="button";add.onclick=function(){var fresh=newNode("","");d.nodes=d.nodes.concat([fresh]);drawBuilder(fresh.id);validate()};builder.appendChild(add);
+      builder.appendChild(row);if(group&&!collapsed[n.id]&&depth<MAXDEPTH-1)rows(kids(n),depth+1,n.id);
+      if(composerDraft(parentId).afterId===n.id)composer(parentId,depth);
+    });
+      var draft=composerDraft(parentId);if(!draft.afterId||!nodes.some(function(n){return n.id===draft.afterId}))composer(parentId,depth);
+    }rows(d.nodes,0,null);
     if(focus){
-      var control=typeof focus==="string"?builder.querySelector('[data-sop-node="'+focus+'"]'):builder.querySelector('[data-sop-row="'+focus.id+'"] [data-move-control="'+focus.control+'"]');
-      if(control)control.focus();
+      var control=typeof focus==="string"?builder.querySelector('[data-sop-node="'+focus+'"]'):focus.composer?builder.querySelector('[data-sop-composer="'+focus.composer+'"]'):builder.querySelector('[data-sop-row="'+focus.id+'"] [data-move-control="'+focus.control+'"]');
+      if(control){control.focus();control.scrollIntoView({block:"nearest"})}
     }
   }
   function named(nodes){return nodes.length>0&&nodes.every(function(n){return !!n.title.trim()&&(!kids(n).length||named(kids(n)))})}
   function validate(){
-    var duplicate=sopNameTaken(d.name,rule&&rule.id),valid=!!d.name.trim()&&d.name.trim().length<=100&&d.platform&&d.format&&named(d.nodes)&&treeDepth(d.nodes)<=MAXDEPTH;
+    var pending=Object.keys(composerDrafts).some(function(key){return composerDrafts[key].text.trim()&&(key==="root"||nodeById(d.nodes,key))}),duplicate=sopNameTaken(d.name,rule&&rule.id),valid=!!d.name.trim()&&d.name.trim().length<=100&&d.platform&&d.format&&(named(d.nodes)||(!d.nodes.length&&pending))&&treeDepth(d.nodes)<=MAXDEPTH;
     hint.hidden=!duplicate;hint.textContent="An SOP with this name already exists. Choose a unique name.";
     save.disabled=!valid||duplicate||!S.sopReady||S.templatesLoading||!!S.templateError;suggested.disabled=!d.format;
   }
   name.oninput=function(){d.name=name.value;validate()};platform.onchange=function(){d.platform=platform.value;validate()};format.onchange=function(){d.format=format.value;var f=formatById(d.format);if(!f||f.angles.indexOf(d.angle)<0)d.angle="";drawTopic();validate()};
-  save.onclick=function(){validate();if(save.disabled)return;var payload={name:d.name,platform:d.platform,format:d.format,angle:d.angle,nodes:copyNodes(d.nodes),anchorDate:d.anchorDate,enabled:rule&&!rule.legacyId?rule.enabled:true,createdAt:rule&&rule.createdAt||new Date().toISOString()};if(rule){payload.id=rule.id;if(rule.legacyId)payload.legacyId=rule.legacyId}
+  save.onclick=function(){validate();if(save.disabled)return;var flushed=false;Object.keys(composerDrafts).forEach(function(key){if(commitDraft(key==="root"?null:key,false))flushed=true});if(flushed)drawBuilder();validate();if(save.disabled)return;var payload={name:d.name,platform:d.platform,format:d.format,angle:d.angle,nodes:copyNodes(d.nodes),anchorDate:d.anchorDate,enabled:rule&&!rule.legacyId?rule.enabled:true,createdAt:rule&&rule.createdAt||new Date().toISOString()};if(rule){payload.id=rule.id;if(rule.legacyId)payload.legacyId=rule.legacyId}
     runDialogSave(ui,save,function(){return storeSopRule(payload)},function(){if(onSaved)onSaved();toast("SOP saved")});
-  };ui.foot.appendChild(save);drawTopic();drawBuilder();validate();overlay(ui.node,function(){return JSON.stringify(d)!==initial},true);
+  };ui.foot.appendChild(save);drawTopic();drawBuilder();validate();overlay(ui.node,function(){return JSON.stringify(d)!==initial||Object.keys(composerDrafts).some(function(key){return !!composerDrafts[key].text.trim()&&(key==="root"||nodeById(d.nodes,key))})},true);
 }
 function openTemplatePicker(a,parentId,depth,onAdd){
   var ui=actionDialog("Browse SOPs","Choose an SOP checklist to add. Its existing subtasks and progress are kept.");
