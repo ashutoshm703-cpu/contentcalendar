@@ -29,6 +29,11 @@ const grouped=api.groupedWork(selectedNested);assert.equal(grouped.length,1);ass
 const moved={...activity,dueDate:'2099-01-08',subtasks:[{...activity.subtasks[0],due:'2099-01-05'},activity.subtasks[1]]};
 rows=api.effectiveWork(moved);assert.equal(rows[1].due,'2099-01-05');assert.equal(rows[2].due,'2099-01-03');assert.equal(rows[3].due,'2099-01-08');
 S.workScope='team';assert.equal(api.workItems().length,4);assert.equal(api.workByDay()['2099-01-04'].length,1);
+const orderFixture={...activity,dueDate:'2099-01-04',subtasks:[{id:'z-first',title:'Z first in saved order',due:'',children:[]},{id:'a-second',title:'A second in saved order',due:'',children:[]}]};
+const originalOrder=Array.from(api.workByDay([orderFixture])['2099-01-04'],r=>r.id);
+orderFixture.subtasks[0].done=true;assert.deepEqual(Array.from(api.workByDay([orderFixture])['2099-01-04'],r=>r.id),originalOrder);
+orderFixture.status='Published';assert.deepEqual(Array.from(api.workByDay([orderFixture])['2099-01-04'],r=>r.id),originalOrder);
+assert.deepEqual(Array.from(api.scheduledNodes(orderFixture,api.workItems([orderFixture])),n=>n.id),['z-first','a-second']);
 S.filters.owner='other';assert.deepEqual(Array.from(api.workItems(),r=>r.id),['activity:video','override','root-inherit']);S.filters.owner='';
 const breakdown=[{title:'Scene preparation',why:'Prepare',tasks:[{title:'Direct the opening',description:'Shoot a clear hook',dueDate:'',children:[{title:'Approve dialogue',description:'Get sign off',dueDate:''}]}]}];
 const empty={...activity,subtasks:[]};let planned=api.appendAiChecklist(empty,breakdown,'nested',{});

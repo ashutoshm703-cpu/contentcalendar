@@ -180,7 +180,7 @@ function workItems(list){var out=[];(list||visible()).forEach(function(a){
   if(ownerInScope(a.owner||""))out.push({a:a,n:null,id:"activity:"+a.id,title:a.title,due:a.dueDate||"",owner:ownerIdentity(a.owner||""),done:a.status==="Published",path:"",depth:-1,inheritedDue:false});
   effectiveWork(a).forEach(function(row){if(!kids(row.n).length&&ownerInScope(row.owner))out.push(row)});
 });return out}
-function workByDay(list){var map={};workItems(list).forEach(function(row){if(row.due)(map[row.due]=map[row.due]||[]).push(row)});Object.keys(map).forEach(function(day){map[day].sort(function(a,b){return Number(a.done)-Number(b.done)||a.title.localeCompare(b.title)})});return map}
+function workByDay(list){var map={};workItems(list).forEach(function(row){if(row.due)(map[row.due]=map[row.due]||[]).push(row)});return map}
 function scopedNodes(a,nodes){var allowed={};effectiveWork(a).forEach(function(row){if(ownerInScope(row.owner))allowed[row.id]=true});function filter(list){return (list||[]).reduce(function(out,n){var children=filter(kids(n));if(kids(n).length?children.length:allowed[n.id])out.push(Object.assign({},n,{children:children}));return out},[])}return filter(nodes)}
 function matchesSearch(a){
   var q=S.query.trim().toLowerCase();
@@ -418,7 +418,7 @@ function foldAllWork(closed){
 }
 function renderWorkCampaigns(host,rows,options){
   options=options||{};S.campaigns.forEach(function(c){var entries=rows.filter(function(row){return row.a.campaignId===c.id});if(!entries.length)return;
-    var section=el("section",options.focus?"cgroup":"work-campaign-block"),head=el("div","work-campaign-head"),body=el("div",options.focus?"cgroup-b":"work-campaign-body"),toggle=workFoldButton("campaign",c.id,c.name,body),heading=el("button",options.focus?"cgroup-h":"work-campaign-heading-button"),title=el("span","work-campaign-heading");section.setAttribute("data-work-campaign-section",c.id);section.style.setProperty("--c",c.colour);title.appendChild(el("small",null,"Campaign"));title.appendChild(el("span",options.focus?"cgroup-n":"work-campaign-name",c.name));heading.appendChild(title);heading.appendChild(el("span","cgroup-c",entries.length+(options.completed?" complete":" items")));heading.setAttribute("aria-label","Toggle campaign: "+c.name);heading.onclick=function(){toggle.click()};head.appendChild(toggle);head.appendChild(heading);section.appendChild(head);
+    var section=el("section",options.focus?"cgroup":"work-campaign-block"),head=el("div","work-campaign-head"),body=el("div",options.focus?"cgroup-b":"work-campaign-body"),toggle=workFoldButton("campaign",c.id,c.name,body),heading=el("button",options.focus?"cgroup-h":"work-campaign-heading-button"),title=el("span","work-campaign-heading");section.setAttribute("data-work-campaign-section",c.id);section.style.setProperty("--c",c.colour);title.appendChild(el("small",null,"Campaign"));title.appendChild(el("span",options.focus?"cgroup-n":"work-campaign-name",c.name));heading.appendChild(title);var complete=entries.filter(function(row){return row.done}).length;heading.appendChild(el("span","cgroup-c",(entries.length-complete)+" to do"+(complete?" · "+complete+" complete":"")));heading.setAttribute("aria-label","Toggle campaign: "+c.name);heading.onclick=function(){toggle.click()};head.appendChild(toggle);head.appendChild(heading);section.appendChild(head);
     groupedWork(entries).forEach(function(entry){body.appendChild(workGroup(entry,Object.assign({},options,{campaignHeading:true})))});section.appendChild(body);host.appendChild(section);
   });
 }
@@ -436,7 +436,7 @@ function workGroup(entry,options){
   function tree(nodes){var list=el("ul","work-children");nodes.forEach(function(n){var raw=nodeById(a.subtasks,n.id)||n,row=selected[n.id],branch=kids(n).length>0,item=el("li","work-tree-item"),line=el("div","work-tree-row"+(row?" work-card":" work-branch")+(nodeDone(raw)?" is-done":""));item.setAttribute("data-work-node",n.id);
     if(row)line.setAttribute("data-work-id",a.id+":"+n.id);
     var children=branch?tree(kids(n)):null;if(branch)line.appendChild(workFoldButton("group",n.id,n.title,children));
-    if(row||(!options.completed&&effective[n.id]&&ownerInScope(effective[n.id].owner)))line.appendChild(completionControl(a,raw));
+    if(row||(effective[n.id]&&ownerInScope(effective[n.id].owner)))line.appendChild(completionControl(a,raw));
     var content=el("div","work-tree-content"),name=el("button","work-task-title",n.title);name.setAttribute("aria-label","Edit subtask: "+n.title);name.setAttribute("data-focus-key","work:"+a.id+":"+n.id);name.onclick=function(){openSubtask(a,raw)};content.appendChild(name);
     var meta=el("div","work-task-meta");if(branch){var counts=nodeCount(raw);meta.appendChild(el("span",null,counts[0]+" of "+counts[1]+" complete"))}else if(row){if(row.owner)meta.appendChild(uname(row.owner));if(row.due){var date=el("span","work-date",fmtShort(row.due));date.title=row.inheritedDue?"Deadline inherited from "+row.source:"Subtask deadline";meta.appendChild(date)}}
     if(meta.childNodes.length)content.appendChild(meta);line.appendChild(content);item.appendChild(line);if(branch)item.appendChild(children);list.appendChild(item);
@@ -561,14 +561,13 @@ function focusChecklist(host,a,from,to){
 /* Today and Next 7 days: everything in play, campaign by campaign,
    with the range's subtasks under the task they belong to */
 function renderFocus(box,from,to,showDates){
-  var rows=workItems().filter(function(row){return row.due&&row.due>=from&&row.due<=to}),pending=rows.filter(function(row){return !row.done}),completed=rows.filter(function(row){return row.done});
-  renderWorkCampaigns(box,pending,{focus:true,from:from,to:to});
-  if(completed.length){var done=el("details","work-completed"),label=el("summary",null,"Completed · "+completed.length);done.appendChild(label);renderWorkCampaigns(done,completed,{completed:true,compact:true});box.appendChild(done)}
+  var rows=workItems().filter(function(row){return row.due&&row.due>=from&&row.due<=to});
+  renderWorkCampaigns(box,rows,{focus:true,from:from,to:to});
   return rows.length;
 }
 function overdueBlock(){
-  var rows=workItems().filter(function(row){return row.due&&row.due<TODAY&&!row.done}).sort(function(a,b){return a.due.localeCompare(b.due)});if(!rows.length)return null;
-  var box=el("details","od work-overdue"),summary=el("summary","od-h","Overdue · "+rows.length+" · Review separately");box.open=!!S.expanded.workOverdue;box.ontoggle=function(){S.expanded.workOverdue=box.open};box.appendChild(summary);box.appendChild(el("p","hint","Earlier deadlines stay here. Opening Today does not change their dates."));renderWorkCampaigns(box,rows,{compact:true});return box;
+  var rows=workItems().filter(function(row){return row.due&&row.due<TODAY}).sort(function(a,b){return a.due.localeCompare(b.due)});if(!rows.length)return null;
+  var pending=rows.filter(function(row){return !row.done}).length,complete=rows.length-pending,box=el("details","od work-overdue"),summary=el("summary","od-h",(pending?"Overdue · "+pending:"Earlier deadlines")+(complete?" · "+complete+" complete":"")+" · Review separately");box.open=!!S.expanded.workOverdue;box.ontoggle=function(){S.expanded.workOverdue=box.open};box.appendChild(summary);box.appendChild(el("p","hint","Earlier deadlines stay here. Completed items keep their place in each checklist."));renderWorkCampaigns(box,rows,{compact:true});return box;
 }
 
 function renderCalendar(main){
