@@ -21,8 +21,15 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   **Show all 7 days** to return to the week ahead. Week and Month use an agenda
   on narrow screens.
 - Today and the same selected date in Next 7 days share the same work list.
-  Activities appear on their own deadline; individual subtasks appear on their
-  effective deadline, with their activity/group shown as context. Blank deadlines
+  Work keeps its hierarchy: **Campaign → video/activity → task group → subtask**.
+  Every selected subtask stays nested under its video and original groups, in
+  saved order. Its ancestors stay visible even when their dates or owners differ;
+  context parents are not counted as work due on the selected date. Week, Month,
+  overdue and completed sections keep the same grouping, with campaign names
+  above each video when there is no shared campaign heading. Month overflow
+  reveals additional whole video groups rather than splitting their checklists.
+  Activities appear on their own deadline; subtasks appear on their
+  effective deadline. Blank deadlines
   dynamically inherit the nearest parent's deadline. Explicit dates stay independent.
   Overdue work and completed work are separate collapsed sections. **Show full
   checklist** reveals the scoped hierarchy, including other dates and completed steps.

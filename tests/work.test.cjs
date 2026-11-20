@@ -5,7 +5,7 @@ const context={document:{addEventListener(){},getElementById(){return {}}},windo
 vm.createContext(context);
 vm.runInContext(source.slice(0,source.indexOf('(function boot(){')).replace(/^render\(\);$/m,'')+`
 render=function(){};toast=function(){};
-globalThis.api={S,effectiveWork,workItems,workByDay,visible,scopedNodes,saveCompletion,appendAiChecklist,aiWorkRequest,setDB(value){db=value}};
+globalThis.api={S,effectiveWork,workItems,workByDay,visible,scopedNodes,scheduledNodes,groupedWork,saveCompletion,appendAiChecklist,aiWorkRequest,setDB(value){db=value}};
 })();`,context);
 const {api}=context,{S}=api;
 assert.equal(S.workScope,'my');S.me={id:'me'};
@@ -19,6 +19,13 @@ let rows=api.effectiveWork(activity);assert.equal(rows[1].due,'2099-01-04');asse
 assert.equal(rows[2].due,'2099-01-03');assert.equal(rows[3].due,'2099-01-06');
 assert.deepEqual(Array.from(api.workItems(),r=>r.id),['inherit']);assert.equal(api.visible().length,1);
 assert.deepEqual(Array.from(api.scopedNodes(activity,activity.subtasks)[0].children,n=>n.id),['inherit']);
+const scheduledSnapshot=JSON.stringify(activity.subtasks),scheduled=api.scheduledNodes(activity,api.workItems());
+assert.equal(scheduled[0].id,'phase');assert.equal(scheduled[0].title,'Pre production');assert.deepEqual(Array.from(scheduled[0].children,n=>n.id),['inherit']);
+assert.equal(JSON.stringify(activity.subtasks),scheduledSnapshot);
+const nestedContext={...activity,subtasks:[{id:'first',title:'Second alphabetically',children:[{id:'middle',title:'Publishing phase',children:[{id:'publish',title:'Publish the video',children:[]}]}]},{id:'second',title:'First alphabetically',children:[]}]};
+const selectedNested=api.effectiveWork(nestedContext).filter(r=>r.id==='publish'||r.id==='second').reverse(),hierarchy=api.scheduledNodes(nestedContext,selectedNested);
+assert.deepEqual(Array.from(hierarchy,n=>n.id),['first','second']);assert.equal(hierarchy[0].children[0].children[0].id,'publish');
+const grouped=api.groupedWork(selectedNested);assert.equal(grouped.length,1);assert.equal(grouped[0].a.id,'video');assert.equal(grouped[0].rows.length,2);
 const moved={...activity,dueDate:'2099-01-08',subtasks:[{...activity.subtasks[0],due:'2099-01-05'},activity.subtasks[1]]};
 rows=api.effectiveWork(moved);assert.equal(rows[1].due,'2099-01-05');assert.equal(rows[2].due,'2099-01-03');assert.equal(rows[3].due,'2099-01-08');
 S.workScope='team';assert.equal(api.workItems().length,4);assert.equal(api.workByDay()['2099-01-04'].length,1);

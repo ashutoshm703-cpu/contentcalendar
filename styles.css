@@ -571,3 +571,53 @@ button:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid var
   .focus-activity .work-card .t{font-size:14px}
   .focus-checklist-bar .text-button{min-height:36px}
 }
+
+/* A video and its original checklist form one unit in every schedule view. */
+.work-campaign-heading{display:flex;flex-direction:column;gap:3px;min-width:0}
+.work-campaign-heading>small{font-size:9px;font-weight:500;letter-spacing:.09em;text-transform:uppercase;color:var(--text-3)}
+.work-campaign-heading .cgroup-n{white-space:normal;overflow-wrap:anywhere}
+.work-group{min-width:0;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden;margin:10px 0}
+.work-group-head{background:var(--surface-2);padding:10px 12px}
+.work-group-head .work-card{margin:0;align-items:center}
+.work-group-head .work-card>.work-complete{margin-top:0}
+.work-group-head .work-card>.chip{padding:4px;background:transparent}
+.work-group-head .chip .t,.work-parent-title{font-size:14px;font-weight:600;line-height:1.5}
+.work-group-head .chip .t span{display:block;overflow:visible;white-space:normal;overflow-wrap:anywhere;-webkit-line-clamp:unset}
+.work-parent-title{overflow-wrap:anywhere}
+.work-parent-context{display:flex;flex-direction:column;gap:4px;width:100%;text-align:left;padding:4px}
+.work-parent-meta,.work-group-campaign{font-size:11px;font-weight:400;line-height:1.6;color:var(--text-2)}
+.work-group-campaign{margin:0 4px 5px}
+.work-children{list-style:none;padding:4px 12px 6px 18px;margin:0;min-width:0}
+.work-children .work-children{padding:0 0 2px 14px;margin-left:12px;border-left:1px solid var(--line-2)}
+.work-tree-item{list-style:none;min-width:0}
+.work-tree-row{display:flex;align-items:flex-start;gap:10px;padding:9px 0;margin:0;min-width:0}
+.work-tree-row>.work-complete{flex:none;margin-top:0}
+.work-tree-content{flex:1;min-width:0}
+.work-task-title{display:block;text-align:left;width:100%;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+.work-task-title:hover,.work-parent-context:hover .work-parent-title{color:var(--brand);text-decoration:underline;text-underline-offset:3px}
+.work-branch .work-task-title{font-weight:500;font-size:13px}
+.work-branch-marker{width:26px;flex:none;text-align:center;line-height:26px;color:var(--text-3)}
+.work-task-meta{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11px;line-height:1.6;color:var(--text-2);margin-top:2px}
+.work-task-meta .uid{font-size:11px;font-weight:400}
+.work-tree-row.is-done .work-task-title{text-decoration:line-through;color:var(--text-3)}
+.work-group .focus-checklist-bar{border-top:1px solid var(--line);padding:8px 14px;gap:2px 12px}
+.work-group .focus-full-checklist{padding:4px 10px}
+.work-group .focus-full-checklist>.hint{padding:6px}
+.cell .work-group{margin:6px 0;border-radius:8px}
+.cell .work-group-head{padding:6px}
+.cell .work-group .chip .t,.cell .work-parent-title{font-size:12px}
+.cell .work-group .chip .m,.cell .work-parent-meta,.cell .work-group-campaign{font-size:10px}
+.cell .work-children{padding:2px 6px 4px}
+.cell .work-children .work-children{padding:0 0 0 7px;margin-left:9px}
+.cell .work-tree-row{gap:5px;padding:6px 0}
+.cell .work-task-title{font-size:11px;line-height:1.5}
+.cell .work-task-meta,.cell .work-task-meta .uid,.cell .work-card .work-date{font-size:9px}
+.cell .work-tree-row>.work-complete{width:22px;height:22px;margin-top:0}
+.cell .work-branch-marker{width:22px;line-height:22px}
+@media(max-width:720px){
+  .work-group-head{padding:9px 10px}
+  .work-children{padding-left:12px;padding-right:10px}
+  .work-children .work-children{padding-left:10px;margin-left:12px}
+  .work-tree-row{gap:8px}
+  .work-branch-marker{width:28px;line-height:28px}
+}
