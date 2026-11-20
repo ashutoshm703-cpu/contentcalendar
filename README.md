@@ -43,14 +43,15 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   steps, or start from an existing activity checklist. The source list shows the
   activity's date and campaign so repeated activities are distinguishable.
 - In **New SOP** or **Edit SOP**, drag a step by its **⋮⋮ handle** to change
-  order. A line marks a drop above/below another step; highlighting the centre
-  shows **Nest here** to move it inside. Groups move with their nested steps and
+  order within its group. A line marks a drop above/below a sibling; dragging
+  never changes grouping. Groups move with their nested steps and
   can collapse. Each compact row has one **⋯** menu for Move up/down, nesting,
   adding a nested step, and removing a step. Menus stay within the viewport on
   mobile. When the drag handle is focused, **↑ / ↓** reorder siblings and
   **← / →** change nesting. Moves preserve step details, prevent loops,
-  and respect the three-level limit. Choose **Save SOP** to keep the new order;
-  existing activity checklists retain their current order.
+  and respect the three-level limit. **Undo move** reverses the last move.
+  Typing/adding a step clears undo so it cannot discard later edits.
+  Save SOP offers a separate choice about updating unfinished work.
 - Add SOP items directly in **Add a step…** or **Add a subtask…** beneath an
   expanded group. Press **Enter** or choose **Add** to insert the item and keep
   typing the next one. **+ Add step** in the checklist heading focuses the
@@ -76,8 +77,14 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
 - **Browse SOPs** manually inserts a checklist even when its conditions do not
   match. Owners and instructions are retained, deadlines shift relative to the
   destination date, progress resets, and existing steps/completion are preserved.
-  Each SOP is applied at most once per target. Editing or deleting an SOP leaves
-  existing activity checklists intact. Library deletion archives the definition.
+  Each SOP is applied at most once per target. When editing an SOP used in
+  unfinished activities, **Save SOP** offers **SOP only** or **Update unfinished
+  tasks**, with a list of affected activities. Updates preserve completed work,
+  owners, local field edits and custom steps. Unchanged removed SOP steps are
+  removed; old untracked steps are never deleted. Nested uses that exceed three
+  levels are skipped and reported. Published activities are excluded. Concurrent
+  SOP edits require reopening the latest version. Library deletion archives the
+  definition and keeps existing tasks.
 - **Duplicate** on a campaign copies all its activities and nested subtasks.
   Activity details offer **Duplicate activity**, and every subtask's **⋯** menu
   offers **Duplicate**, including groups and the deepest nested items. Copies
@@ -91,6 +98,11 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   this is a finite series, with no background scheduler or series-wide edits.
   Monthly repeats preserve the original day where possible and use the last
   day in shorter months. Campaign duplication is atomic, with up to 499 activities.
+- Each campaign offers **AI plan**: enter the goal and audience, optionally
+  add an offer and constraints, then draft with Gemini. Review the rationale,
+  success measure, dates and execution steps. Edit titles/dates and select which
+  activities to add. Drafting changes no tasks. Existing titles/status inform
+  each new draft. Planning runs on demand; it does not monitor in the background.
 - Form labels, dialog focus, view-tab keyboard navigation and visible focus
   indicators support keyboard use. Optional fields are identified in the forms.
 
@@ -160,6 +172,11 @@ Collections:
   must include a matching reservation in the same transaction, enforced through
   getAfter in Firestore rules. Publish the updated rules before the UI deployment.
 
+SOP definitions retain stable node IDs and a `version`. Applied steps record
+`sopSource` with ruleId, stepId and a field baseline for safe updates. Individual
+subtask copies detach from the parent SOP; whole-activity copies retain tracking
+and shift date baselines.
+
 Activities and individual subtask nodes record `appliedSopRules[]`. Activity
 metadata and explicitly selected SOP steps are saved in a transaction. Repeated
 activities keep the selected checklists and their application history.
@@ -188,3 +205,34 @@ independence, progress resets, date shifts and recurrence boundaries. With
 `playwright` installed or available on `NODE_PATH`, `node tests/reuse-ui.cjs`
 checks the browser flows in Chrome, including mobile layout and failed-write
 recovery. The browser test uses an in-memory database and never contacts Firebase.
+
+## Gemini campaign planning setup
+
+1. Create a key in [Google AI Studio](https://aistudio.google.com/api-keys).
+2. In Vercel → contentcalendar → Settings → Environment Variables, add
+   `GEMINI_API_KEY` for Production, then redeploy. Never commit the key or put it
+   in `firebase-config.js`, browser storage, or chat. `GEMINI_MODEL` optionally
+   overrides the default `gemini-3.8-flash`; there is no automatic fallback.
+3. Open a campaign → **AI plan** to check setup and draft a plan.
+
+The `/api/campaign-plan` Node function verifies the Firebase ID token through
+Firebase Auth, requires a verified @nprep.in account, and calls Gemini server
+side with structured JSON output. It shares the entered brief, campaign
+name/dates, up to 100 activity titles/status/formats/dates and up to 30 SOP
+names/conditions. Owner details, scripts and task descriptions are excluded.
+The app explains Google's free-tier data-use terms before generation. Free-tier
+availability and quotas depend on Google; a billing-enabled project can incur
+charges. The integration does not enable billing or switch to another model.
+Burst protection is per warm function instance, not a durable global quota;
+configure project limits in Google AI Studio for shared deployment.
+
+Planning requires valid campaign dates, a goal and audience. Invalid/duplicate
+steps and out-of-range dates are rejected. Adding selected suggestions is
+transactional and uses stable draft IDs so retries cannot reset existing work.
+Campaigns store `aiBrief` for future planning; accepted activities record `aiPlanId`.
+
+`node tests/campaign-plan.test.cjs` checks authentication, key isolation,
+request/output validation, quota and failure states using mocked upstreams.
+The browser fixture also mocks Gemini; check a real generation after configuring
+the production key. For local API testing use `vercel dev`; a plain static
+server only serves the non-AI app.

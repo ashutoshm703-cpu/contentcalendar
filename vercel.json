@@ -1,0 +1,5 @@
+{
+  "functions": {
+    "api/campaign-plan.js": { "maxDuration": 60 }
+  }
+}

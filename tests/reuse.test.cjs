@@ -10,7 +10,8 @@ const context = {
 vm.createContext(context);
 vm.runInContext(source.slice(0, source.indexOf('(function boot(){')).replace(/^render\(\);$/m, '') + `
   globalThis.api={copyNodes,insertAfter,treeDepth,copyActivity,repeatDate,writeActivityCopies,applySopRules,saveActivityWithSops,subtaskLocation,saveSubtaskWithSops,storeSopRule,archiveSop,normalizeSopName,sopNameTaken,sopDisplayName,allSopRules,moveSopNode,sopNodePosition,
-    setDB(value){db=value;render=function(){}},setSops(rules,ready=true){S.sopRules=rules;S.sopReady=ready;S.templatesLoading=false;S.templateError=""},setTemplates(rows){S.templates=rows},getRules(){return S.sopRules}};
+    materializeSop,reconcileSop,syncActivitySop,sopUsage,sopNodes,copyIndependentSubtask,
+    setActivities(rows){S.activities=rows},setDB(value){db=value;render=function(){}},setSops(rules,ready=true){S.sopRules=rules;S.sopReady=ready;S.templatesLoading=false;S.templateError=""},setTemplates(rows){S.templates=rows},getRules(){return S.sopRules}};
 })();`, context);
 const api = context.api;
 const nodes = [{id:'group',title:'Pre class',done:true,due:'2026-11-18',owner:'owner',description:'Keep this',children:[
@@ -155,5 +156,47 @@ api.setDB({batch(){return {set(ref,value){writes.push({ref,value})},commit(){ret
   assert.equal(records.has('sopNameClaims/n-renamed%20sop'),false);
   assert.equal(records.get('sopRules/'+saved.id).archived,true);
   assert.equal(api.normalizeSopName(' Ａcademic  SOP '),'academic sop');
+  const previous={id:'sync',name:'Sync test',platform:'YouTube',format:'Live',enabled:true,version:1,anchorDate:'2026-11-19',nodes:[
+    {id:'p',title:'Prepare',children:[{id:'s1',title:'Draft',due:'2026-11-18',children:[]},{id:'s2',title:'Review',children:[]}]},
+    {id:'s3',title:'Publish',children:[]},{id:'s4',title:'Remove unused',children:[]},{id:'s5',title:'Keep assigned',children:[]}
+  ]};
+  const applied=api.materializeSop(previous,'2026-11-26');
+  const ids=JSON.parse(JSON.stringify(applied));
+  applied[0].children[0].title='My custom draft';applied[0].children[0].due='2026-11-30';applied[0].children[0].owner='writer';
+  applied[0].children[1].done=true;applied[2].description='Local instructions';applied[3].owner='editor';
+  applied.push({id:'custom',title:'Custom task',children:[],done:false});
+  const updated={...previous,nodes:[{...previous.nodes[0],children:[{...previous.nodes[0].children[0],title:'Write draft',due:'2026-11-20'}, {id:'new',title:'Check slides',children:[]}]},{...previous.nodes[1],title:'Publish video'}]};
+  const ongoingActivity={id:'sync-ongoingActivity',status:'In progress',dueDate:'2026-11-26',appliedSopRules:['sync'],subtasks:applied};
+  const synced=api.syncActivitySop(ongoingActivity,previous,updated);
+  assert.equal(synced.subtasks[0].children[0].id,ids[0].children[0].id);assert.equal(synced.subtasks[0].children[0].title,'My custom draft');assert.equal(synced.subtasks[0].children[0].due,'2026-11-30');assert.equal(synced.subtasks[0].children[0].owner,'writer');
+  assert.equal(synced.subtasks[0].children[1].title,'Check slides');assert.equal(synced.subtasks[0].children[2].title,'Review');assert.equal(synced.subtasks[0].children[2].done,true);
+  assert.equal(synced.subtasks[1].title,'Publish video');assert.equal(synced.subtasks.find(n=>n.id==='custom').title,'Custom task');
+  assert.equal(synced.subtasks.find(n=>n.title==='Remove unused').description,'Local instructions');assert.equal(synced.subtasks.find(n=>n.title==='Keep assigned').owner,'editor');
+  const pristine=api.materializeSop(previous,'2026-11-26');
+  assert.equal(api.reconcileSop(pristine,previous,updated,'2026-11-26').length,2);
+  const independent=api.copyIndependentSubtask(pristine[0]);assert.equal(independent.sopSource,undefined);assert.equal(independent.children[0].sopSource,undefined);
+  const innerRule={...previous,nodes:[previous.nodes[1]]},outerNodes=api.materializeSop(innerRule,'2026-11-26');
+  outerNodes[0].appliedSopRules=['sync'];outerNodes[0].children=api.materializeSop(innerRule,'2026-11-26');
+  const nestedCopy=api.copyIndependentSubtask(outerNodes[0]);assert.equal(nestedCopy.sopSource,undefined);assert.equal(nestedCopy.children[0].sopSource.ruleId,'sync');
+  const twoUses={id:'two',status:'In progress',dueDate:'2026-11-26',appliedSopRules:['sync'],subtasks:outerNodes};
+  const changedInner={...innerRule,nodes:[{...previous.nodes[1],title:'Publish updated'}]};
+  const bothSynced=api.syncActivitySop(twoUses,innerRule,changedInner);assert.equal(bothSynced.subtasks.length,1);assert.equal(bothSynced.subtasks[0].title,'Publish updated');assert.equal(bothSynced.subtasks[0].children[0].title,'Publish updated');assert.notEqual(bothSynced.subtasks[0].id,bothSynced.subtasks[0].children[0].id);
+  const allDone=api.materializeSop(previous,'2026-11-26');allDone[0].children.forEach(n=>n.done=true);
+  const withAddedInCompleteGroup=api.reconcileSop(allDone,previous,updated,'2026-11-26');
+  assert.equal(withAddedInCompleteGroup[0].children.some(n=>n.title==='Check slides'),true);assert.equal(withAddedInCompleteGroup[0].children.find(n=>n.title==='Draft').done,true);
+  const moved={...previous,nodes:[{...previous.nodes[0],children:[previous.nodes[0].children[1]]},{...previous.nodes[1],children:[previous.nodes[0].children[0]]}]};
+  const movedResult=api.reconcileSop(pristine,previous,moved,'2026-11-26');
+  assert.equal(movedResult[0].children.length,1);assert.equal(movedResult[1].children[0].id,pristine[0].children[0].id);
+  assert.equal(JSON.stringify(api.syncActivitySop({...ongoingActivity,status:'Published'},previous,updated).subtasks),JSON.stringify(ongoingActivity.subtasks));
+  const repeated=api.copyNodes(pristine,7);assert.equal(repeated[0].children[0].sopSource.baseline.due,'2026-12-02');
+  const legacyNodes=JSON.parse(JSON.stringify(pristine));(function strip(ns){ns.forEach(n=>{delete n.sopSource;strip(n.children)})})(legacyNodes);
+  const legacyUpdated=api.reconcileSop(legacyNodes,previous,updated,'2026-11-26');assert.equal(legacyUpdated[0].children[0].title,'Write draft');assert.equal(legacyUpdated.some(n=>n.title==='Remove unused'),true);
+  const nested={...ongoingActivity,appliedSopRules:[],subtasks:[{id:'parent',title:'Nested use',appliedSopRules:['sync'],children:api.materializeSop(previous,'2026-11-26')}]};
+  assert.equal(api.sopUsage(nested,'sync'),1);assert.equal(api.syncActivitySop(nested,previous,updated).subtasks[0].children[1].title,'Publish video');
+  records.set('sopRules/sync',structuredClone(previous));records.set('activities/sync-ongoingActivity',structuredClone(ongoingActivity));api.setSops([previous]);api.setActivities([ongoingActivity]);
+  await api.storeSopRule(updated,false,previous);assert.equal(records.get('activities/sync-ongoingActivity').subtasks[1].title,'Publish');
+  let latest=api.getRules().find(r=>r.id==='sync');await api.storeSopRule({...latest,nodes:updated.nodes},true,latest);assert.equal(records.get('activities/sync-ongoingActivity').subtasks[1].title,'Publish video');
+  await assert.rejects(api.storeSopRule(updated,true,previous),e=>e.userMessage.includes('someone else'));
+  console.log('PASS: SOP propagation, custom edits/completed work, removed steps, source moves, legacy safety, nested use, shifted baselines, SOP-only scope and concurrent edits');
   console.log('PASS: inherited subtask conditions, legacy duplicate labels, concurrent name reservations, rename/archive releases');
 })().catch(error=>{console.error(error);process.exitCode=1});
