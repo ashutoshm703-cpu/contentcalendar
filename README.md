@@ -67,6 +67,10 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   filters apply to activities. Empty results offer a clear reset action.
 - Checklist removal asks for confirmation. Clearing an item's title does not
   delete it. Campaign and activity deletion also require an explicit choice.
+- Only Ashutosh Mishra's verified account can delete activities/tasks or campaigns.
+  Delete controls are hidden for other teammates, and Firestore enforces the same
+  rule using the owner's immutable account ID and email. The restriction applies
+  from every view, including Today. Teammates retain creation, editing and completion.
 - Select a subtask name or its **pencil icon** to edit its name, description, owner,
   due date, platform and type. **Save subtask** stores the details in Firestore.
   Nested subtasks and groups support descriptions too. Opening subtask details

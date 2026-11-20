@@ -225,6 +225,8 @@ function toast(msg){
   setTimeout(function(){t.style.transition="opacity .3s";t.style.opacity="0";setTimeout(function(){t.remove()},320)},2300);
 }
 function writable(){return S.canWrite!==false}
+/* Match the immutable Firebase identity used by the database delete policy. */
+function canDeleteTasks(){return writable()&&!!S.me&&S.me.id==="XPLO57VwLWZnXGaI2uJzVL4qx6t2"&&String(S.me.email||"").toLowerCase()==="ashutosh_mishra@nprep.in"}
 function initials(n){
   var p=String(n||"").trim().split(/\s+/).filter(Boolean);
   if(!p.length)return "?";
@@ -2237,7 +2239,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
   var requiredNote=el("p","required-note");foot.appendChild(requiredNote);
   var save=el("button","btn btn-p",isNew?"Create activity":"Save changes");
   save.onclick=function(){submit()};
-  if(!isNew&&writable()){
+  if(!isNew&&canDeleteTasks()){
     var del=el("button","btn btn-d","Delete");
     var confirmRow=null;
     del.onclick=function(){
@@ -2247,6 +2249,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
       var yes=el("button","btn btn-d","Delete");
       yes.style.marginLeft="auto";
       yes.onclick=function(){
+        if(!canDeleteTasks()){showErr({code:"permission-denied"});return}
         db.doc("activities/"+a.id).delete().then(function(){closeOverlay(true);toast("Activity deleted")})
           .catch(function(e){showErr(e)});
       };
@@ -2496,7 +2499,7 @@ function openCampaign(c,afterCreate){
   var requiredNote=el("p","required-note");foot.appendChild(requiredNote);
   var err=el("div","hint err");err.hidden=true;body.appendChild(err);
   var save=el("button","btn btn-p sp",isNew?"Create campaign":"Save changes");
-  if(!isNew){
+  if(!isNew&&canDeleteTasks()){
     var n=S.activities.filter(function(a){return a.campaignId===c.id}).length;
     var del=el("button","btn btn-d","Delete"),crow=null;
     del.onclick=function(){
@@ -2505,6 +2508,7 @@ function openCampaign(c,afterCreate){
       crow.appendChild(el("span","hint err",n?"Delete this campaign and its "+n+(n===1?" activity?":" activities?"):"Delete this campaign?"));
       var yes=el("button","btn btn-d","Delete");yes.style.marginLeft="auto";
       yes.onclick=function(){
+        if(!canDeleteTasks()){err.hidden=false;err.textContent=msgFor({code:"permission-denied"});return}
         yes.disabled=true;yes.textContent="Deleting…";
         var kids=S.activities.filter(function(a){return a.campaignId===c.id});
         var chain=Promise.resolve();

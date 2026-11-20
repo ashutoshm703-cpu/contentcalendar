@@ -15,12 +15,21 @@ service cloud.firestore {
         && request.auth.token.email.lower().matches('.*@nprep[.]in');
     }
 
+    function taskDeletionOwner() {
+      return nprep()
+        && request.auth.uid == 'XPLO57VwLWZnXGaI2uJzVL4qx6t2'
+        && request.auth.token.email.lower() == 'ashutosh_mishra@nprep.in';
+    }
+
     // The plan itself: anyone on the team reads and writes it.
     match /campaigns/{campaignId} {
-      allow read, write: if nprep();
+      allow read, create, update: if nprep();
+      // Campaign deletion also removes its tasks, so it has the same owner gate.
+      allow delete: if taskDeletionOwner();
     }
     match /activities/{activityId} {
-      allow read, write: if nprep();
+      allow read, create, update: if nprep();
+      allow delete: if taskDeletionOwner();
     }
     match /subtaskTemplates/{templateId} {
       allow read, update, delete: if nprep();

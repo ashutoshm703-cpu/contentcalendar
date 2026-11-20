@@ -5,10 +5,16 @@ const context={document:{addEventListener(){},getElementById(){return {}}},windo
 vm.createContext(context);
 vm.runInContext(source.slice(0,source.indexOf('(function boot(){')).replace(/^render\(\);$/m,'')+`
 render=function(){};toast=function(){};
-globalThis.api={S,effectiveWork,workItems,workByDay,visible,scopedNodes,scheduledNodes,groupedWork,saveCompletion,appendAiChecklist,aiWorkRequest,buildTeamDirectory,rebuildTeamDirectory,storeTeamMember,ownerIdentity,foldAllWork,restoreWorkFolds,setDB(value){db=value}};
+globalThis.api={S,effectiveWork,workItems,workByDay,visible,scopedNodes,scheduledNodes,groupedWork,saveCompletion,appendAiChecklist,aiWorkRequest,buildTeamDirectory,rebuildTeamDirectory,storeTeamMember,ownerIdentity,foldAllWork,restoreWorkFolds,canDeleteTasks,setDB(value){db=value}};
 })();`,context);
 const {api}=context,{S}=api;
 assert.equal(S.workScope,'my');S.me={id:'me'};
+const deletionOwner={id:'XPLO57VwLWZnXGaI2uJzVL4qx6t2',email:'ashutosh_mishra@nprep.in'};
+assert.equal(api.canDeleteTasks(),false);S.me=deletionOwner;assert.equal(api.canDeleteTasks(),true);
+S.me={...deletionOwner,email:'ASHUTOSH_MISHRA@NPREP.IN'};assert.equal(api.canDeleteTasks(),true);
+S.me={id:'someone-else',email:deletionOwner.email,name:'Ashutosh Mishra'};assert.equal(api.canDeleteTasks(),false);
+S.me={id:deletionOwner.id,email:'someone-else@nprep.in'};assert.equal(api.canDeleteTasks(),false);
+S.me=deletionOwner;S.canWrite=false;assert.equal(api.canDeleteTasks(),false);S.canWrite=true;S.me={id:'me'};
 const activity={id:'video',title:'A nursing story',owner:'other',dueDate:'2099-01-06',status:'In progress',subtasks:[
   {id:'phase',title:'Pre production',due:'2099-01-04',owner:'me',children:[
     {id:'inherit',title:'Outline',due:'',children:[]},
