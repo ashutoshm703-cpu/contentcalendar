@@ -38,7 +38,12 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   has been assigned. Select the deadline to edit it; overdue deadlines are
   highlighted until the item is complete.
 - **SOP library** is the single place to create and reuse checklists. Every SOP
-  has a unique name, platform, content format, optional topic/category, and an
+  has a unique name, one shared checklist and up to 20 alternative conditions.
+  Each condition has a platform, content format and optional topic/category.
+  Matching any complete condition offers the SOP once; fields within a condition
+  must all match. Use **+ Add another condition** for a second platform/format,
+  and **Remove** to remove an alternative. Duplicate or incomplete conditions
+  block saving. Existing single-condition SOPs open as Condition 1. The SOP has an
   editable checklist with up to three levels. Add steps directly, use suggested
   steps, or start from an existing activity checklist. The source list shows the
   activity's date and campaign so repeated activities are distinguishable.
@@ -98,11 +103,13 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   this is a finite series, with no background scheduler or series-wide edits.
   Monthly repeats preserve the original day where possible and use the last
   day in shorter months. Campaign duplication is atomic, with up to 499 activities.
-- Each campaign offers **AI plan**: enter the goal and audience, optionally
-  add an offer and constraints, then draft with Gemini. Review the rationale,
-  success measure, dates and execution steps. Edit titles/dates and select which
-  activities to add. Drafting changes no tasks. Existing titles/status inform
-  each new draft. Planning runs on demand; it does not monitor in the background.
+- A campaign contains videos/activities. AI planning belongs to each activity's
+  checklist: **Suggest tasks with AI** drafts phases and missing execution tasks
+  for that activity only. Enter its goal/audience and optional constraints, review
+  editable phases/tasks/deadlines, and choose what to add. Existing phases are
+  reused, duplicate task titles skipped, and completed/custom work preserved.
+  Drafting changes no data. AI never creates campaign-level activities. Published
+  activities must be reopened before adding production tasks.
 - Form labels, dialog focus, view-tab keyboard navigation and visible focus
   indicators support keyboard use. Optional fields are identified in the forms.
 
@@ -206,33 +213,40 @@ independence, progress resets, date shifts and recurrence boundaries. With
 checks the browser flows in Chrome, including mobile layout and failed-write
 recovery. The browser test uses an in-memory database and never contacts Firebase.
 
-## Gemini campaign planning setup
+## Gemini video task planning setup
 
 1. Create a key in [Google AI Studio](https://aistudio.google.com/api-keys).
 2. In Vercel → contentcalendar → Settings → Environment Variables, add
    `GEMINI_API_KEY` for Production, then redeploy. Never commit the key or put it
    in `firebase-config.js`, browser storage, or chat. `GEMINI_MODEL` optionally
-   overrides the default `gemini-3.8-flash`; there is no automatic fallback.
-3. Open a campaign → **AI plan** to check setup and draft a plan.
+   overrides the default `gemini-3.5-flash-lite`; there is no automatic fallback.
+3. Open a video/activity → **Checklist → Suggest tasks with AI**.
 
-The `/api/campaign-plan` Node function verifies the Firebase ID token through
+The `/api/activity-plan` Node function verifies the Firebase ID token through
 Firebase Auth, requires a verified @nprep.in account, and calls Gemini server
-side with structured JSON output. It shares the entered brief, campaign
-name/dates, up to 100 activity titles/status/formats/dates and up to 30 SOP
-names/conditions. Owner details, scripts and task descriptions are excluded.
+side with structured JSON output through `generateContent`. It shares the
+selected video's title/platform/format/category/deadline, entered brief, up to 150
+existing checklist titles/completion/deadlines and up to 20 matching SOP
+names/conditions. Scripts, owners and task descriptions are excluded.
 The app explains Google's free-tier data-use terms before generation. Free-tier
 availability and quotas depend on Google; a billing-enabled project can incur
 charges. The integration does not enable billing or switch to another model.
 Burst protection is per warm function instance, not a durable global quota;
 configure project limits in Google AI Studio for shared deployment.
 
-Planning requires valid campaign dates, a goal and audience. Invalid/duplicate
-steps and out-of-range dates are rejected. Adding selected suggestions is
-transactional and uses stable draft IDs so retries cannot reset existing work.
-Campaigns store `aiBrief` for future planning; accepted activities record `aiPlanId`.
+Planning requires a valid video deadline, goal and audience. Invalid/repeated
+phases and invalid task dates are rejected. Adding selected tasks reads the latest
+activity in a transaction and retains an applied draft ID so retries cannot reset
+work. Activity `aiBrief` stores planning context; `appliedAiPlans` prevents replay;
+accepted groups/tasks record `aiPlanId`. Campaign data is unchanged.
 
-`node tests/campaign-plan.test.cjs` checks authentication, key isolation,
-request/output validation, quota and failure states using mocked upstreams.
+Provider failures distinguish invalid keys, access restrictions, unavailable
+models, exhausted quotas and rejected request settings. Server logs contain only
+provider status/code/reason; keys and prompts are never logged. The app never
+silently switches models or enables billing.
+
+`node tests/activity-plan.test.cjs` checks authentication, key isolation,
+request/output validation, quota and provider failure states using mocked upstreams.
 The browser fixture also mocks Gemini; check a real generation after configuring
 the production key. For local API testing use `vercel dev`; a plain static
 server only serves the non-AI app.

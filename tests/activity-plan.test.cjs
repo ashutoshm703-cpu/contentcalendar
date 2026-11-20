@@ -1,0 +1,38 @@
+const assert=require('node:assert/strict');
+const handler=require('../api/activity-plan.js');
+const {brief,validatePlan,outputText,recent}=handler._test;
+const request={activity:{title:'Nursing Story 1',type:'Reel',platforms:['Instagram'],angle:'Motivational',dueDate:'2026-11-28',status:'Not started'},today:'2026-11-20',brief:{goal:'Motivate aspirants through a nursing story',audience:'Working nursing aspirants'},existing:[],sops:[]};
+const plan={summary:'Prepare the story, produce the reel, and check the response.',assumptions:['Confirm participant consent.'],phases:[{title:'Pre-production',why:'Prepare a clear, accurate story.',tasks:[{title:'Confirm story consent',description:'Get approval to use the interview.',dueDate:'2026-11-24'}]}]};
+const reply=(status,data)=>({ok:status>=200&&status<300,status,json:async()=>data});
+async function invoke(options={}){let status=200,payload;const headers={};await handler({method:options.method||'POST',headers:{authorization:'Bearer test.token.signature','content-type':'application/json',...options.headers},body:options.body===undefined?request:options.body},{setHeader(k,v){headers[k]=v},status(n){status=n;return this},json(v){payload=v;return this}});return {status,payload,headers}}
+(async()=>{
+const originalFetch=global.fetch,originalKey=process.env.GEMINI_API_KEY;
+try{
+  let calls=[];process.env.GEMINI_API_KEY='SERVER-ONLY-TEST-KEY';
+  global.fetch=async(url,options)=>{calls.push({url,options});return url.includes('identitytoolkit')?reply(200,{users:[{localId:'u1',email:'owner@nprep.in',emailVerified:true}]}):reply(200,{candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(plan)}]}}]})};
+  assert.equal((await invoke({headers:{authorization:''}})).status,401);assert.equal(calls.length,0);
+  global.fetch=async()=>reply(200,{users:[{localId:'u1',email:'owner@outside.in',emailVerified:true}]});assert.equal((await invoke()).status,403);
+  global.fetch=async()=>reply(200,{users:[{localId:'u1',email:'owner@nprep.in',emailVerified:false}]});assert.equal((await invoke()).status,403);
+  global.fetch=async(url,options)=>{calls.push({url,options});return url.includes('identitytoolkit')?reply(200,{users:[{localId:'u1',email:'owner@nprep.in',emailVerified:true}]}):reply(200,{candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(plan)}]}}]})};
+  delete process.env.GEMINI_API_KEY;assert.equal((await invoke({method:'GET'})).payload.configured,false);assert.equal((await invoke()).status,503);
+  process.env.GEMINI_API_KEY='SERVER-ONLY-TEST-KEY';calls=[];const success=await invoke();assert.equal(success.status,200);assert.equal(success.payload.plan.phases.length,1);assert.equal(JSON.stringify(success).includes('SERVER-ONLY'),false);
+  assert.equal(calls[0].url.includes('accounts:lookup'),true);const upstream=calls[1];assert.equal(upstream.options.headers['x-goog-api-key'],'SERVER-ONLY-TEST-KEY');assert.equal(JSON.parse(upstream.options.body).generationConfig.responseMimeType,'application/json');
+  assert.equal((await invoke()).status,429);recent.clear();
+  assert.equal((await invoke({body:{...request,brief:{goal:''}}})).status,400);
+  assert.equal((await invoke({body:{...request,activity:{...request.activity,dueDate:'2026-99-99'}}})).status,400);
+  assert.equal((await invoke({headers:{'content-length':'99999'}})).status,413);
+  assert.equal((await invoke({body:{...request,activity:{...request.activity,status:'Published'}}})).status,400);
+  global.fetch=async(url)=>url.includes('identitytoolkit')?reply(200,{users:[{localId:'u1',email:'owner@nprep.in',emailVerified:true}]}):reply(429,{error:'SERVER-ONLY-TEST-KEY'});recent.clear();let result=await invoke();assert.equal(result.status,429);assert.equal(JSON.stringify(result).includes('SERVER-ONLY'),false);
+  recent.clear();global.fetch=async(url)=>url.includes('identitytoolkit')?reply(200,{users:[{localId:'u1',email:'owner@nprep.in',emailVerified:true}]}):reply(200,{candidates:[{finishReason:'STOP',content:{parts:[{text:'invalid json'}]}}]});assert.equal((await invoke()).status,502);
+  const context=brief({...request,brief:{...request.brief,private:'secret'},existing:[{title:'Done',script:'secret'}]});assert.equal(JSON.stringify(context).includes('secret'),false);
+  assert.throws(()=>validatePlan({...plan,phases:[{...plan.phases[0],tasks:[{...plan.phases[0].tasks[0],dueDate:'2026-12-25'}]}]},context));
+  assert.throws(()=>validatePlan(plan,{...context,existing:[{title:'Confirm story consent'}]}));
+  assert.equal(outputText({candidates:[{content:{parts:[{thought:true,text:'hidden'},{text:'visible'}]}}]}),'visible');
+  for(const [status,detail,expected] of [[400,{error:{status:'INVALID_ARGUMENT',details:[{reason:'API_KEY_INVALID'}]}},'API key value'],[400,{error:{status:'INVALID_ARGUMENT'}},'request settings'],[404,{error:{status:'NOT_FOUND'}},'model is unavailable'],[403,{error:{status:'PERMISSION_DENIED'}},'not authorised']]){
+    recent.clear();global.fetch=async(url)=>url.includes('identitytoolkit')?reply(200,{users:[{localId:'u1',email:'owner@nprep.in',emailVerified:true}]}):reply(status,detail);
+    const rejected=await invoke();assert.equal(rejected.payload.error.includes(expected),true);assert.equal(JSON.stringify(rejected).includes('SERVER-ONLY'),false);
+  }
+  assert.equal((await invoke({method:'DELETE'})).status,405);
+  console.log('PASS: server-only Gemini key, Firebase identity/domain verification, setup state, schema validation, privacy bounds, burst limit, invalid model output, quota errors and request limits');
+}finally{global.fetch=originalFetch;if(originalKey===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=originalKey;recent.clear()}
+})().catch(e=>{console.error(e);process.exitCode=1});

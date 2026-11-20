@@ -10,7 +10,7 @@ const context = {
 vm.createContext(context);
 vm.runInContext(source.slice(0, source.indexOf('(function boot(){')).replace(/^render\(\);$/m, '') + `
   globalThis.api={copyNodes,insertAfter,treeDepth,copyActivity,repeatDate,writeActivityCopies,applySopRules,saveActivityWithSops,subtaskLocation,saveSubtaskWithSops,storeSopRule,archiveSop,normalizeSopName,sopNameTaken,sopDisplayName,allSopRules,moveSopNode,sopNodePosition,
-    materializeSop,reconcileSop,syncActivitySop,sopUsage,sopNodes,copyIndependentSubtask,
+    materializeSop,reconcileSop,syncActivitySop,sopUsage,sopNodes,copyIndependentSubtask,sopConditions,sopConditionsValid,sopMatches,appendAiChecklist,
     setActivities(rows){S.activities=rows},setDB(value){db=value;render=function(){}},setSops(rules,ready=true){S.sopRules=rules;S.sopReady=ready;S.templatesLoading=false;S.templateError=""},setTemplates(rows){S.templates=rows},getRules(){return S.sopRules}};
 })();`, context);
 const api = context.api;
@@ -109,6 +109,19 @@ api.setDB({batch(){return {set(ref,value){writes.push({ref,value})},commit(){ret
   api.setSops([{id:'academic',name:'Academic',enabled:true,platform:'YouTube',format:'Long form',angle:'Academic',nodes}]);
   assert.equal(api.applySopRules({...longForm,angle:'Live class'},['academic']).subtasks.length,0);
   assert.equal(api.applySopRules({...longForm,angle:'Academic'},['academic']).subtasks.length,1);
+  const multi={id:'nursing',name:'Nursing Story',enabled:true,nodes,conditions:[{platform:'YouTube',format:'Short',angle:'Motivational (nursing story)'},{platform:'Instagram',format:'Reel',angle:'Motivational'}]};
+  api.setSops([multi]);
+  assert.equal(api.sopMatches({type:'Short',platforms:['YouTube'],angle:'Motivational (nursing story)'}).filter(r=>r.id==='nursing').length,1);
+  assert.equal(api.sopMatches({type:'Reel',platforms:['Instagram'],angle:'Motivational'}).length,1);
+  assert.equal(api.sopMatches({type:'Reel',platforms:['YouTube'],angle:'Motivational'}).length,0);
+  assert.equal(api.sopMatches({type:'Short',platforms:['Instagram'],angle:'Motivational (nursing story)'}).length,0);
+  assert.equal(api.sopMatches({type:'Reel',platforms:['Instagram'],angle:'Academic'}).length,0);
+  assert.equal(api.sopConditionsValid({...multi,conditions:[multi.conditions[0],multi.conditions[0]]}),false);
+  assert.equal(api.sopConditionsValid({...multi,conditions:[{platform:'YouTube',format:''}]}),false);
+  const broad={...multi,id:'broad',name:'Broad',conditions:[{platform:'Instagram',format:'Reel',angle:''},{platform:'Instagram',format:'Reel',angle:'Motivational'}]};
+  api.setSops([broad]);assert.equal(api.sopMatches({type:'Reel',platforms:['Instagram'],angle:'Motivational'}).length,1);
+  assert.equal(api.applySopRules({...longForm,type:'Reel',platforms:['Instagram'],angle:'Motivational'},['broad']).subtasks.length,1);
+  api.setSops([multi,broad]);assert.equal(api.sopMatches({type:'Reel',platforms:['Instagram'],angle:'Academic'})[0].id,'broad');
   api.setSops([],false);
   assert.equal(api.applySopRules(longForm).subtasks.length,0);
   api.setSops([]);
@@ -198,5 +211,13 @@ api.setDB({batch(){return {set(ref,value){writes.push({ref,value})},commit(){ret
   let latest=api.getRules().find(r=>r.id==='sync');await api.storeSopRule({...latest,nodes:updated.nodes},true,latest);assert.equal(records.get('activities/sync-ongoingActivity').subtasks[1].title,'Publish video');
   await assert.rejects(api.storeSopRule(updated,true,previous),e=>e.userMessage.includes('someone else'));
   console.log('PASS: SOP propagation, custom edits/completed work, removed steps, source moves, legacy safety, nested use, shifted baselines, SOP-only scope and concurrent edits');
+  const video={id:'video',status:'In progress',dueDate:'2099-01-01',subtasks:[{id:'phase',title:'Production',children:[{id:'done',title:'Record interview',done:true,owner:'writer',description:'Keep me',children:[]}]}]};
+  const planPhases=[{title:'Production',why:'Produce',tasks:[{title:'Record interview',description:'Duplicate',dueDate:''},{title:'Cut the reel',description:'Keep the story under 45 seconds.',dueDate:''}]},{title:'Publishing',why:'Publish',tasks:[{title:'Check captions',description:'Proofread subtitles.',dueDate:''}]}];
+  const planned=api.appendAiChecklist(video,planPhases,'plan-one',{goal:'Motivate',audience:'Aspirants'});
+  assert.equal(planned.added,2);assert.equal(planned.activity.subtasks.length,2);assert.equal(planned.activity.subtasks[0].id,'phase');assert.equal(planned.activity.subtasks[0].children[0].done,true);assert.equal(planned.activity.subtasks[0].children[0].description,'Keep me');
+  assert.equal(planned.activity.subtasks[0].children[1].title,'Cut the reel');assert.equal(video.subtasks[0].children.length,1);
+  const retried=api.appendAiChecklist(planned.activity,planPhases,'plan-one',{});assert.equal(retried.added,0);assert.equal(retried.activity,planned.activity);
+  assert.throws(()=>api.appendAiChecklist({...video,status:'Published'},planPhases,'plan-two',{}));
+  console.log('PASS: alternative SOP conditions, no cross-matching/duplicate nudges, activity-only AI phases, preserved work, duplicate filtering and idempotent retry');
   console.log('PASS: inherited subtask conditions, legacy duplicate labels, concurrent name reservations, rename/archive releases');
 })().catch(error=>{console.error(error);process.exitCode=1});

@@ -468,6 +468,11 @@ button:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid var
 .modal.sop-editor{width:min(700px,calc(100% - 32px))}
 .sop-editor .p-body{gap:18px}.sop-editor .field{margin:0}
 .sop-condition-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.sop-condition-title{font-size:14px;font-weight:600}.sop-condition-help{margin-top:-10px;font-size:12px;line-height:1.65}
+.sop-condition-list{display:flex;flex-direction:column;gap:10px}.sop-condition-set{display:flex;flex-direction:column;gap:14px;padding:14px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
+.sop-condition-head{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px}.sop-remove-condition{padding:5px 8px;min-height:30px;color:var(--text-2);font-size:11px;border-radius:5px}.sop-remove-condition:hover{background:var(--surface-2);color:var(--danger)}
+.sop-condition-or{align-self:center;font-size:10px;font-weight:600;letter-spacing:.06em;color:var(--text-3);line-height:1}.sop-add-condition{align-self:flex-start;color:var(--brand);font-size:12px;font-weight:500;padding:8px 10px;border:1px solid var(--line);border-radius:6px;margin-top:-5px}.sop-add-condition:disabled{opacity:.5}
+.sop-condition-set select{min-width:0;width:100%}.sop-condition-set .hint{font-size:11px}
 .sop-checklist-heading{display:flex;align-items:center;gap:10px;margin-top:4px}.sop-checklist-heading h3{font-size:14px;font-weight:600}
 .sop-step-count{font-size:11px;color:var(--text-3)}.sop-reorder-help{margin-top:-10px;font-size:11px}
 .sop-header-add{margin-left:auto;font-size:12px;font-weight:500;color:var(--brand);padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
@@ -506,11 +511,12 @@ button:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid var
 .sop-undo-move{padding:6px 9px;min-height:32px;font-size:11px;color:var(--brand);border:1px solid var(--line);border-radius:6px;flex:none}
 .card .top{flex-wrap:wrap}.card .c-top{flex:1 1 140px;min-width:0}.ai-launch{color:var(--brand);background:var(--sky-soft)}
 .ai-planner{width:min(740px,calc(100% - 32px))}.ai-brief{display:flex;flex-direction:column;gap:16px}.ai-sharing{font-size:11px;line-height:1.65}.ai-sharing a{color:var(--brand);text-decoration:underline}
+.ai-phase{display:flex;flex-direction:column;gap:10px;padding-top:7px}.ai-phase-title{font-weight:600;background:var(--surface-2)}.ai-video-context{font-size:12px;line-height:1.65;color:var(--text-2);padding:10px 12px;background:var(--surface-2);border-radius:7px}
 .ai-results{display:flex;flex-direction:column;gap:14px}.ai-results[hidden],.ai-brief[hidden]{display:none}.ai-plan-summary{font-size:14px;line-height:1.65;color:var(--text)}
 .ai-step{display:grid;grid-template-columns:20px minmax(0,1fr);align-items:start;gap:12px;padding:15px;border:1px solid var(--line);border-radius:10px}.ai-step>input{width:18px;height:18px;margin-top:10px;accent-color:var(--brand)}
 .ai-step-content{display:flex;flex-direction:column;gap:9px;min-width:0}.ai-step-content>input{font-weight:500}.ai-step-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.ai-step-meta input{width:150px;min-width:0;padding:6px 8px;font-size:12px}.ai-step-meta .tag{white-space:normal;line-height:1.5}.ai-step-why{font-size:13px;line-height:1.65;color:var(--text-2)}
 .ai-step summary,.ai-results>details summary{font-size:12px;color:var(--brand);cursor:pointer}.ai-planner .p-foot button[hidden]{display:none}
-@media(max-width:480px){.card .c-top{flex-basis:100%}.ai-step{padding:11px;gap:8px}.ai-planner .p-foot{gap:8px}.ai-planner .p-foot .btn{font-size:12px}.ai-step-content>input{font-size:13px}}
+@media(max-width:480px){.card .c-top{flex-basis:100%}.ai-step{padding:11px;gap:8px}.ai-planner .p-foot{gap:8px}.ai-planner .p-foot .btn{font-size:12px}.ai-step-content>input{font-size:13px}.sop-condition-set{padding:12px}.sop-condition-set .sop-condition-grid{grid-template-columns:1fr}}
 @media(max-width:480px){.sop-add-composer{margin-left:calc(var(--step-depth)*14px)}.sop-editor .p-body{padding-left:16px;padding-right:16px}.sop-condition-grid{gap:10px}.sop-step-row{margin-left:calc(var(--step-depth)*14px);grid-template-columns:24px 16px minmax(0,1fr) auto 30px;gap:2px}.sop-step-row input{font-size:13px}.sop-menu-command{min-height:40px}}
 .sop-preview[hidden],.repeat-detail[hidden],.quick-sop[hidden]{display:none}
 @media (hover:none){.sub-x,.card .top .x,.cell .add{opacity:1}select.inl.empty{opacity:1;max-width:96px;padding:3px 8px}.mark,.sub-chk{min-width:28px;min-height:28px}}
