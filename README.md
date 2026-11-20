@@ -123,6 +123,15 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   account. **Copy prompt** exports it; **Use recommended prompt** restores the
   recommended text for the current draft. **Direction & draft copy** under each
   suggested task lets you edit scene instructions and copy before adding.
+- **Using your saved work** selects up to three similar saved video checklists
+  and three matching/applied SOPs, alongside the current checklist. Similarity
+  uses platform, format, category, campaign and title; change the selected
+  examples when needed. Saved instructions and completion are read afresh for
+  each draft. Untouched unfinished AI-generated steps are excluded from examples
+  until someone edits or completes them. Source IDs/reasons appear on suggestions;
+  new ideas are optional and start unchecked. No-gap results are valid and do not
+  create tasks. This retrieves saved work at request time; it does not retrain
+  Gemini or infer results from a published status.
 - Form labels, dialog focus, view-tab keyboard navigation and visible focus
   indicators support keyboard use. Optional fields are identified in the forms.
 
@@ -238,10 +247,12 @@ recovery. The browser test uses an in-memory database and never contacts Firebas
 The `/api/activity-plan` Node function verifies the Firebase ID token through
 Firebase Auth, requires a verified @nprep.in account, and calls Gemini server
 side with structured JSON output through `generateContent`. It shares the
-selected video's title/platform/format/category/deadline, entered brief, up to 150
-existing checklist titles/completion/deadlines and up to 20 matching SOP
-names/conditions, plus the selected AI direction. Scripts, owners and existing
-task descriptions are excluded.
+selected video's metadata/notes and campaign goal, the entered brief and AI
+direction, up to 100 current checklist steps, up to three selected video examples
+(30 steps each), and up to three SOPs (40 steps each). Steps include phase paths,
+instructions, completion and deadlines. Per-source character budgets bound the
+excerpts; instructions are capped at 400 characters each. Scripts and owner
+details are excluded. The request body is capped at 256 KB before sanitisation.
 The app explains Google's free-tier data-use terms before generation. Free-tier
 availability and quotas depend on Google; a billing-enabled project can incur
 charges. The integration does not enable billing or switch to another model.
@@ -252,7 +263,9 @@ Planning requires a valid video deadline, goal and audience. Invalid/repeated
 phases and invalid task dates are rejected. Adding selected tasks reads the latest
 activity in a transaction and retains an applied draft ID so retries cannot reset
 work. Activity `aiBrief` stores planning context; `appliedAiPlans` prevents replay;
-accepted groups/tasks record `aiPlanId`. Campaign data is unchanged.
+accepted groups/tasks record `aiPlanId`. Tasks also keep `aiBasis` (source IDs,
+labels and the reason) and `aiOriginal` (the original proposed text), so later
+human edits can become reference material. Campaign data is unchanged.
 
 The recommended prompt is defined in `lib/ai-direction.cjs` and served by the
 authenticated configuration endpoint. Custom direction is limited to 6,000
@@ -261,6 +274,9 @@ Saved account defaults live at `users/{uid}.aiPlanning` under the existing rule
 that only the user can write their own profile. Task instructions preserve up to
 2,200 characters, with a maximum of 20 suggested tasks per draft. The model has
 no live trends or analytics access; outputs remain reviewable suggestions.
+Every returned task must cite a supplied primary source ID or use an empty
+source ID to mark a new idea. Unknown source IDs are rejected. Provenance identifies the provided
+context; it is not an independent guarantee of model reasoning or task quality.
 
 Provider failures distinguish invalid keys, access restrictions, unavailable
 models, exhausted quotas and rejected request settings. Server logs contain only
