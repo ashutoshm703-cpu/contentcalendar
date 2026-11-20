@@ -108,7 +108,7 @@ var MONTHS=["January","February","March","April","May","June","July","August","S
 var DOW=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
 /* ─── state ─────────────────────────────────────────────── */
-var S={campaigns:[],activities:[],view:"calendar",calView:"next7",anchor:"",y:0,m:0,
+var S={campaigns:[],activities:[],view:"calendar",calView:"next7",workScope:"my",completing:{},anchor:"",y:0,m:0,
   filters:{campaign:"",platform:"",format:"",owner:"",status:""},
   loading:true,stale:false,err:null,canWrite:null,open:null,expanded:{},focusAdd:null,lastAdd:{},
   placeFor:null,showFilters:false,me:null,team:[],
@@ -164,11 +164,24 @@ function visible(){
     if(f.campaign&&a.campaignId!==f.campaign)return false;
     if(f.status&&a.status!==f.status)return false;
     if(f.format&&a.type!==f.format)return false;
-    if(f.owner&&a.owner!==f.owner)return false;
+    if(!activityInWorkScope(a))return false;
     if(f.platform&&(a.platforms||[]).indexOf(f.platform)<0)return false;
     return true;
   });
 }
+function effectiveWork(a){
+  var out=[];function walk(nodes,parent,path,depth){(nodes||[]).forEach(function(n){var row={a:a,n:n,id:n.id,title:n.title,due:n.due||parent.due||"",owner:n.owner||parent.owner||"",inheritedDue:!n.due,parentDue:parent.due||"",source:n.due?n.title:parent.source,done:nodeDone(n),path:path.join(" → "),depth:depth};out.push(row);walk(kids(n),{due:row.due,owner:row.owner,source:row.source},path.concat(n.title),depth+1)})}
+  walk(a.subtasks,{due:a.dueDate||"",owner:a.owner||"",source:a.title},[],0);return out;
+}
+function workOwner(){return S.workScope==="my"?(S.me&&S.me.id)||"__signed_out__":S.filters.owner||""}
+function ownerInScope(owner){var expected=workOwner();return !expected||owner===expected}
+function activityInWorkScope(a){return ownerInScope(a.owner||"")||effectiveWork(a).some(function(row){return ownerInScope(row.owner)})}
+function workItems(list){var out=[];(list||visible()).forEach(function(a){
+  if(ownerInScope(a.owner||""))out.push({a:a,n:null,id:"activity:"+a.id,title:a.title,due:a.dueDate||"",owner:a.owner||"",done:a.status==="Published",path:"",depth:-1,inheritedDue:false});
+  effectiveWork(a).forEach(function(row){if(!kids(row.n).length&&ownerInScope(row.owner))out.push(row)});
+});return out}
+function workByDay(list){var map={};workItems(list).forEach(function(row){if(row.due)(map[row.due]=map[row.due]||[]).push(row)});Object.keys(map).forEach(function(day){map[day].sort(function(a,b){return Number(a.done)-Number(b.done)||a.title.localeCompare(b.title)})});return map}
+function scopedNodes(a,nodes){var allowed={};effectiveWork(a).forEach(function(row){if(ownerInScope(row.owner))allowed[row.id]=true});function filter(list){return (list||[]).reduce(function(out,n){var children=filter(kids(n));if(kids(n).length?children.length:allowed[n.id])out.push(Object.assign({},n,{children:children}));return out},[])}return filter(nodes)}
 function matchesSearch(a){
   var q=S.query.trim().toLowerCase();
   if(!q)return true;
@@ -179,7 +192,7 @@ function matchesSearch(a){
 function campaignMatches(c){
   var f=S.filters,q=S.query.trim().toLowerCase();
   if(f.campaignStatus&&c.status!==f.campaignStatus)return false;
-  if(f.owner&&c.owner!==f.owner)return false;
+    if(!S.activities.some(function(a){return a.campaignId===c.id&&activityInWorkScope(a)})&&!(S.workScope==="team"&&!f.owner)&&!(S.workScope==="my"&&S.me&&c.owner===S.me.id))return false;
   return !q||[c.name,c.goal].join(" ").toLowerCase().indexOf(q)>=0||S.activities.some(function(a){return a.campaignId===c.id&&matchesSearch(a)});
 }
 function resetFilterValues(){Object.keys(S.filters).forEach(function(k){S.filters[k]=""})}
@@ -195,6 +208,7 @@ function byDay(list){
 function ownerIds(){
   var seen={},out=[];
   S.activities.concat(S.campaigns).forEach(function(r){if(r.owner&&!seen[r.owner]){seen[r.owner]=1;out.push(r.owner)}});
+  S.activities.forEach(function(a){effectiveWork(a).forEach(function(row){if(row.owner&&!seen[row.owner]){seen[row.owner]=1;out.push(row.owner)}})});
   return out;
 }
 
@@ -239,11 +253,11 @@ function headSub(){
       +(live?" · "+live+" live":"");
   }
   var r=viewRange();
-  var n=visible().filter(function(a){return a.dueDate>=r[0]&&a.dueDate<=r[1]}).length;
-  if(S.calView==="today")
-    return n?(n===1?"One thing ships today":n+" things ship today"):"Nothing ships today.";
+  if(S.calView==="next7"&&S.focusDay)r=[S.focusDay,S.focusDay];
+  var rows=workItems().filter(function(row){return row.due>=r[0]&&row.due<=r[1]}),n=rows.filter(function(row){return !row.done}).length,done=rows.length-n;
+  if(S.calView==="today")return n+" to do today"+(done?" · "+done+" complete":"");
   if(S.calView==="next7")
-    return n?(n+" scheduled over the next seven days"):"Nothing scheduled this week yet.";
+    return S.focusDay?n+" to do on "+fmtShort(S.focusDay):n+" to do over the next seven days";
   if(S.calView==="week")
     return n?(n+" scheduled this week"):"Nothing scheduled this week yet.";
   return n?(n+" scheduled in "+MONTHS[S.m]):"Nothing scheduled in "+MONTHS[S.m]+" yet.";
@@ -262,7 +276,7 @@ function renderHead(){
   var cal=S.view==="calendar";
   var box=el("div","phead");
   var heading=el("div","pheading"),intro=el("div");
-  intro.appendChild(el("p","eyebrow",cal?"Publishing schedule":"Campaign planning"));
+  intro.appendChild(el("p","eyebrow",cal?"Daily work":"Campaign planning"));
   intro.appendChild(el("h1",null,headTitle()));
   intro.appendChild(el("p","psub",headSub()));heading.appendChild(intro);
   var add=el("button","btn btn-p","+ "+(!cal?"New campaign":"New activity"));add.id="new-act";
@@ -270,9 +284,10 @@ function renderHead(){
   add.onclick=!cal?function(){openCampaign(null)}:function(){openActivity(null,S.calView==="next7"?S.focusDay:undefined)};
   heading.appendChild(add);box.appendChild(heading);
   if(S.me&&!S.loading&&writable()){
-    var rules=el("button","text-button sop-manage","SOP library");rules.onclick=openSopRules;heading.appendChild(rules);
+    var rules=el("button","text-button sop-manage","SOP library");rules.onclick=openSopRules;heading.insertBefore(rules,add);
   }
   var ctl=el("div","pctl");
+  if(S.me){var scope=el("div","work-scope");scope.setAttribute("role","group");scope.setAttribute("aria-label","Work visibility");[["my","My work"],["team","Team work"]].forEach(function(option){var button=el("button",S.workScope===option[0]?"on":"",option[1]);button.setAttribute("aria-pressed",String(S.workScope===option[0]));button.onclick=function(){S.workScope=option[0];S.filters.owner="";render()};scope.appendChild(button)});ctl.appendChild(scope)}
   if(cal&&(S.calView==="week"||S.calView==="month")){
     var nav=el("div","nav");
     var pv=el("button",null,"‹");pv.setAttribute("aria-label","Previous");
@@ -298,7 +313,7 @@ function renderHead(){
     };
     ctl.appendChild(ea);
   }
-  var late=S.activities.filter(isLate).length;
+  var late=workItems().filter(function(row){return row.due&&row.due<TODAY&&!row.done}).length;
   if(late&&!(cal&&S.calView==="today")){
     var ob=el("button","alert-pill",late+" overdue");
     ob.title="Show them on Today";
@@ -341,11 +356,11 @@ function sel(id,label,opts,val,onChange){
 }
 function filterBar(){
   var f=el("div","fbar");f.id="calendar-filters";
-  if(S.view==="campaigns"){
+    if(S.view==="campaigns"){
     f.appendChild(sel("f-cstat","Any campaign status",CSTATUS.map(function(s){return[s,s]}),S.filters.campaignStatus,
       function(v){S.filters.campaignStatus=v;render()}));
-    var seen={},owners=S.campaigns.filter(function(c){if(!c.owner||seen[c.owner])return false;seen[c.owner]=true;return true});
-    if(owners.length)f.appendChild(sel("f-own","Any campaign owner",owners.map(function(c){return[c.owner,(S.profiles[c.owner]&&S.profiles[c.owner].name)||"Teammate"]}),S.filters.owner,
+    var ids=ownerIds();
+    if(S.workScope==="team"&&ids.length)f.appendChild(sel("f-own","Assigned to anyone",ids.map(function(id){return[id,(S.profiles[id]&&S.profiles[id].name)||"Teammate"]}),S.filters.owner,
       function(v){S.filters.owner=v;render()}));
     return f;
   }
@@ -357,7 +372,7 @@ function filterBar(){
     return[x.id,x.group==="Other"?x.label:x.group+" · "+x.label]}),S.filters.format,
     function(v){S.filters.format=v;render()}));
   var ids=ownerIds();
-  if(ids.length){
+  if(ids.length&&S.workScope==="team"){
     var os=sel("f-own","Anyone",ids.map(function(i){return[i,(S.profiles[i]&&S.profiles[i].name)||"Teammate"]}),S.filters.owner,
       function(v){S.filters.owner=v;render()});
     f.appendChild(os);
@@ -368,6 +383,28 @@ function filterBar(){
 }
 
 /* ─── render: chip ──────────────────────────────────────── */
+function saveCompletion(a,nodeId,done){
+  var key=a.id+":"+(nodeId||"activity");S.completing=S.completing||{};if(S.completing[key])return Promise.resolve();S.completing[key]=true;render();
+  return wq.then(function(){return db.runTransaction(function(tx){var ref=db.doc("activities/"+a.id);return tx.get(ref).then(function(snap){
+    if(!snap.exists)throw new Error("This task no longer exists.");var current=Object.assign({id:a.id},snap.data()),patch;
+    if(nodeId){var target=nodeById(current.subtasks,nodeId);if(!target)throw new Error("This subtask no longer exists.");function finish(n){return Object.assign({},n,{done:done,completedAt:done?new Date().toISOString():"",children:kids(n).map(finish)})}patch={subtasks:patchNode(current.subtasks,nodeId,finish(target))}}
+    else patch={status:done?"Published":"Ready",completedAt:done?new Date().toISOString():""};
+    tx.update(ref,patch);return Object.assign({},current,patch);
+  })})}).then(function(saved){Object.assign(a,saved);S.activities=S.activities.map(function(item){return item.id===a.id?saved:item});toast(done?"Marked complete":"Marked incomplete");return saved}).catch(function(e){toast(e.code?msgFor(e):e.message);throw e}).finally(function(){delete S.completing[key];render()});
+}
+function completionControl(a,n,onSaved){
+  if(n)n=nodeById(a.subtasks,n.id)||n;
+  var done=n?nodeDone(n):a.status==="Published",title=n?n.title:a.title,key=a.id+":"+(n?n.id:"activity"),button=el("button","sub-chk work-complete"+(done?" is-done":""));button.setAttribute("role","checkbox");button.setAttribute("aria-checked",String(done));button.setAttribute("aria-pressed",String(done));button.setAttribute("aria-label",(done?"Reopen: ":"Complete: ")+title);button.setAttribute("data-focus-key","complete:"+key);button.appendChild(el("i",null,"✓"));button.disabled=!writable()||!!(S.completing&&S.completing[key]);
+  button.onclick=function(e){e.stopPropagation();function save(){return saveCompletion(a,n&&n.id,!done).then(function(saved){if(onSaved)onSaved(saved)}).catch(function(){})}
+    var count=n?leaves(kids(n)).filter(function(child){return !child.done}).length:leaves(a.subtasks).filter(function(child){return !child.done}).length;
+    if(!done&&count){var ui=actionDialog(n?"Complete this group?":"Complete this task?",n?"This marks all "+count+" unfinished subtasks in “"+title+"” complete.":count+" subtasks are still unfinished. Completing this task marks the activity published; its subtasks keep their own progress.");var confirm=el("button","btn btn-p",n?"Complete group":"Complete task");confirm.onclick=function(){runDialogSave(ui,confirm,function(){return saveCompletion(a,n&&n.id,true)},function(saved){if(onSaved)onSaved(saved)})};ui.foot.appendChild(confirm);overlay(ui.node,null,true)}else save();
+  };return button;
+}
+function workCard(row){
+  var wrap=el("div","work-card"+(row.done?" is-done":""));wrap.setAttribute("data-work-id",row.n?row.a.id+":"+row.id:"activity:"+row.a.id);wrap.appendChild(completionControl(row.a,row.n));
+  if(!row.n)wrap.appendChild(chip(row.a));else{var button=el("button","chip work-subtask"),title=el("span","t",row.title),meta=el("div","m");button.setAttribute("data-focus-key","work:"+row.a.id+":"+row.id);button.setAttribute("aria-label","Edit subtask: "+row.title);button.appendChild(title);meta.appendChild(el("span",null,row.a.title));if(row.path)meta.appendChild(el("span",null,row.path));if(row.inheritedDue)meta.appendChild(el("span","inherited-date","Parent deadline"));if(row.owner)meta.appendChild(uname(row.owner));button.appendChild(meta);button.onclick=function(){openSubtask(row.a,row.n)};wrap.appendChild(button)}
+  var meta=wrap.querySelector(".chip .m");if(meta){if(!row.n)meta.appendChild(row.owner?uname(row.owner):el("span",null,"Unassigned"));if(row.due)meta.appendChild(el("span","work-date",fmtShort(row.due)))}return wrap;
+}
 function chip(a){
   var b=el("button","chip"+(a.status==="Published"?" done":"")+(isLate(a)?" late":""));
   b.setAttribute("data-focus-key","activity:"+a.id);
@@ -394,7 +431,7 @@ function chip(a){
 
 /* ─── render: calendar ──────────────────────────────────── */
 function dayGrid(startISO,count,minH){
-  var frag=document.createDocumentFragment(),map=byDay(visible()),total=0;
+  var frag=document.createDocumentFragment(),map=workByDay(),total=0;
   var dow=el("div","dow");DOW.forEach(function(d){dow.appendChild(el("div",null,d))});frag.appendChild(dow);
   var grid=el("div","grid");
   for(var i=0;i<count;i++){
@@ -412,7 +449,7 @@ function dayGrid(startISO,count,minH){
     var items=map[key]||[];if(!out)total+=items.length;
     if(!items.length&&!out)cell.classList.add("quiet");
     var lim=(S.calView==="week"||S.expanded[key])?items.length:S.dayMax;
-    items.slice(0,lim).forEach(function(a,n){var c=chip(a);c.style.animationDelay=(n*40)+"ms";cell.appendChild(c)});
+    items.slice(0,lim).forEach(function(a,n){var c=workCard(a);c.style.animationDelay=(n*40)+"ms";cell.appendChild(c)});
     if(items.length>lim){
       var mb=el("button","more","+"+(items.length-lim)+" more");
       mb.onclick=function(k){return function(e){e.stopPropagation();S.expanded[k]=true;render()}}(key);
@@ -425,7 +462,7 @@ function dayGrid(startISO,count,minH){
 }
 
 function agendaList(startISO,endISO,showEmpty){
-  var box=el("div","agenda"),map=byDay(visible()),n=daysBetween(startISO,endISO),k=0,total=0;
+  var box=el("div","agenda"),map=workByDay(),n=daysBetween(startISO,endISO),k=0,total=0;
   for(var i=0;i<=n;i++){
     var key=addDays(startISO,i),items=map[key]||[];
     total+=items.length;
@@ -437,7 +474,7 @@ function agendaList(startISO,endISO,showEmpty){
     dt.appendChild(el("span",null,DOW[dowIdx(key)]));
     row.appendChild(dt);
     var ii=el("div","ag-items");
-    items.forEach(function(a){ii.appendChild(chip(a))});
+    items.forEach(function(a){ii.appendChild(workCard(a))});
     if(!items.length){
       var em=el("div","ag-empty");
       em.appendChild(el("span",null,"Nothing scheduled"));
@@ -454,20 +491,11 @@ function agendaList(startISO,endISO,showEmpty){
 }
 
 /* leaves of this task that fall in a date range, with the group path they sit under */
-function dueLeaves(a,from,to){
-  var out=[];
-  (function walk(nodes,path){
-    (nodes||[]).forEach(function(n){
-      if(kids(n).length)walk(n.children,path.concat([n.title]));
-      else if(n.due&&n.due>=from&&n.due<=to&&!n.done)out.push({n:n,path:path.join(" · ")});
-    });
-  })(a.subtasks||[],[]);
-  return out;
-}
+function dueLeaves(a,from,to){return effectiveWork(a).filter(function(row){return !kids(row.n).length&&row.due&&row.due>=from&&row.due<=to&&!row.done&&ownerInScope(row.owner)}).map(function(row){return {n:row.n,path:row.path,due:row.due,owner:row.owner,inheritedDue:row.inheritedDue}})}
 
 /* one tile per day, so empty days stay visible even when the list is grouped by campaign */
 function weekStrip(from,to){
-  var map=byDay(visible()),box=el("div","wstrip"),n=daysBetween(from,to);
+  var map=workByDay(),box=el("div","wstrip"),n=daysBetween(from,to);
   for(var i=0;i<=n;i++){
     var key=addDays(from,i),items=map[key]||[];
     var t=el("button","wday"+(key===TODAY?" today":"")+(items.length?"":" empty")+(S.focusDay===key?" selected":""));
@@ -484,9 +512,9 @@ function weekStrip(from,to){
   return box;
 }
 function focusChecklist(host,a,from,to){
-  var total=subTotal(a);if(!total)return false;
-  var key="focus-subs-"+a.id,open=!!S.expanded[key],due=dueLeaves(a,from,to).length,undated=leaves(a.subtasks).filter(function(n){return !n.due&&!n.done}).length,bar=el("div","focus-checklist-bar");
-  var detail=el("span","hint",(due?due+" unfinished "+(due===1?"subtask":"subtasks")+" due "+(from===to?"on this day":"in this range"):"No unfinished subtasks dated "+(from===to?"for this day":"in this range"))+(undated?" · "+undated+" without a deadline":""));bar.appendChild(detail);
+  var total=leaves(scopedNodes(a,a.subtasks)).length;if(!total)return false;
+  var key="focus-subs-"+a.id,open=!!S.expanded[key],due=dueLeaves(a,from,to).length,inherited=effectiveWork(a).filter(function(row){return !kids(row.n).length&&ownerInScope(row.owner)&&!row.n.due&&row.due&&!row.done}).length,bar=el("div","focus-checklist-bar");
+  var detail=el("span","hint",due+" unfinished subtasks due "+(from===to?"on this day":"in this range")+(inherited?" · "+inherited+" using a parent deadline":""));bar.appendChild(detail);
   var toggle=el("button","text-button",open?"Hide full checklist":"Show full checklist ("+total+")");toggle.setAttribute("aria-expanded",String(open));toggle.setAttribute("aria-label",(open?"Hide":"Show")+" full checklist for "+a.title);toggle.onclick=function(){S.expanded[key]=!open;render()};bar.appendChild(toggle);host.appendChild(bar);
   if(open){var full=el("div","focus-full-checklist");full.appendChild(el("p","hint","Full checklist · Includes completed steps and steps with other dates or no deadline."));full.appendChild(subtaskTree(a));host.appendChild(full)}return open;
 }
@@ -494,88 +522,22 @@ function focusChecklist(host,a,from,to){
 /* Today and Next 7 days: everything in play, campaign by campaign,
    with the range's subtasks under the task they belong to */
 function renderFocus(box,from,to,showDates){
-  var list=visible(),groups=[];
-  S.campaigns.forEach(function(c){
-    var items=[];
-    list.forEach(function(a){
-      if(a.campaignId!==c.id)return;
-      var inRange=a.dueDate>=from&&a.dueDate<=to;
-      var dl=dueLeaves(a,from,to);
-      if(inRange||dl.length)items.push({a:a,subs:dl,due:inRange});
-    });
-    if(!items.length)return;
-    items.sort(function(x,y){
-      if(x.a.dueDate!==y.a.dueDate)return x.a.dueDate<y.a.dueDate?-1:1;
-      var xt=x.a.dueTime||"99",yt=y.a.dueTime||"99";
-      return xt<yt?-1:(xt>yt?1:(x.a.title>y.a.title?1:-1));
-    });
-    groups.push({c:c,items:items});
+  var rows=workItems().filter(function(row){return row.due&&row.due>=from&&row.due<=to}),pending=rows.filter(function(row){return !row.done}),completed=rows.filter(function(row){return row.done});
+  S.campaigns.forEach(function(c){var entries=pending.filter(function(row){return row.a.campaignId===c.id});if(!entries.length)return;
+    var section=el("div","cgroup");section.style.setProperty("--c",c.colour);var heading=el("button","cgroup-h");heading.appendChild(el("i","swatch"));heading.appendChild(el("span","cgroup-n",c.name));heading.appendChild(el("span","cgroup-c",entries.length+" to do"));heading.onclick=function(){S.view="campaigns";S.expanded["c"+c.id]=true;render()};section.appendChild(heading);
+    var body=el("div","cgroup-b"),ids=[];entries.forEach(function(row){if(ids.indexOf(row.a.id)<0)ids.push(row.a.id)});
+    ids.forEach(function(id){var activity=S.activities.find(function(a){return a.id===id}),items=entries.filter(function(row){return row.a.id===id}),group=el("div","focus-activity"),full=!!S.expanded["focus-subs-"+id];
+      if(!items.some(function(row){return !row.n})){var context=el("button","work-context",activity.title+" · "+(activity.status==="Published"?"Published":"Parent task"));context.onclick=function(){openActivity(activity)};group.appendChild(context)}
+      items.sort(function(a,b){return (a.n?1:0)-(b.n?1:0)||a.path.localeCompare(b.path)||a.title.localeCompare(b.title)}).forEach(function(row){if(!full||!row.n)group.appendChild(workCard(row))});
+      focusChecklist(group,activity,from,to);body.appendChild(group);
+    });section.appendChild(body);box.appendChild(section);
   });
-  groups.forEach(function(g,i){
-    var sec=el("div","cgroup");
-    sec.style.setProperty("--c",g.c.colour);
-    sec.style.animationDelay=(i*45)+"ms";
-    var h=el("button","cgroup-h");
-    h.title="Open this campaign";
-    h.appendChild(el("i","swatch"));
-    h.appendChild(el("span","cgroup-n",g.c.name));
-    h.appendChild(el("span","cgroup-c",g.items.length+(g.items.length===1?" task":" tasks")));
-    h.onclick=function(){S.view="campaigns";S.expanded["c"+g.c.id]=true;render()};
-    sec.appendChild(h);
-    var bd=el("div","cgroup-b");
-    g.items.forEach(function(it){
-      if(showDates){
-        var fr=el("div","frow");
-        var dl=el("span","d"+(it.due?"":" out"),fmtShort(it.a.dueDate));
-        if(!it.due)dl.title="Ends "+fmtLong(it.a.dueDate)+", outside this week — shown for its items below";
-        fr.appendChild(dl);fr.appendChild(chip(it.a));
-        bd.appendChild(fr);
-      }else bd.appendChild(chip(it.a));
-      if(focusChecklist(bd,it.a,from,to)||!it.subs.length)return;
-      var sl=el("div","subs nest");
-      it.subs.forEach(function(x){
-        var r=el("div","sub-row");
-        var cb=el("button","sub-chk");cb.setAttribute("aria-pressed","false");
-        cb.appendChild(el("i",null,"✓"));cb.disabled=!writable();
-        cb.title="Mark done";
-        cb.onclick=function(){saveSubs(it.a,patchNode(it.a.subtasks,x.n.id,{done:true}))};
-        r.appendChild(cb);
-        r.appendChild(subtaskDeadline(it.a,x.n));
-        var subTitle=el("button","sub-t sub-title-button",x.n.title);
-        subTitle.setAttribute("aria-label","Edit subtask: "+x.n.title);
-        subTitle.onclick=function(){openSubtask(it.a,x.n)};r.appendChild(subTitle);
-        if(writable())r.appendChild(subtaskEditButton(it.a,x.n));
-        var mt=el("span","sub-meta");
-        if(x.path)mt.appendChild(el("span","sub-kind",x.path));
-        if(x.n.platform)mt.appendChild(platPill(x.n.platform));
-        if(x.n.kind)mt.appendChild(el("span","sub-kind",x.n.kind));
-        if(x.n.owner)mt.appendChild(uname(x.n.owner));
-        r.appendChild(mt);
-        if(x.n.description)r.appendChild(el("p","sub-description",x.n.description));
-        sl.appendChild(r);
-      });
-      bd.appendChild(sl);
-    });
-    sec.appendChild(bd);
-    box.appendChild(sec);
-  });
-  return groups.length;
+  if(completed.length){var done=el("details","work-completed"),label=el("summary",null,"Completed · "+completed.length);done.appendChild(label);completed.forEach(function(row){done.appendChild(workCard(row))});box.appendChild(done)}
+  return rows.length;
 }
-
 function overdueBlock(){
-  var late=visible().filter(isLate);
-  if(!late.length)return null;
-  late.sort(function(a,b){return a.dueDate<b.dueDate?-1:1});
-  var box=el("div","od");
-  box.appendChild(el("div","od-h","Overdue · "+late.length));
-  late.forEach(function(a){
-    var r=el("div","od-row");
-    r.appendChild(el("span","d",fmtShort(a.dueDate)));
-    r.appendChild(chip(a));
-    box.appendChild(r);
-    focusChecklist(box,a,TODAY,TODAY);
-  });
-  return box;
+  var rows=workItems().filter(function(row){return row.due&&row.due<TODAY&&!row.done}).sort(function(a,b){return a.due.localeCompare(b.due)});if(!rows.length)return null;
+  var box=el("details","od work-overdue"),summary=el("summary","od-h","Overdue · "+rows.length+" · Review separately");box.open=!!S.expanded.workOverdue;box.ontoggle=function(){S.expanded.workOverdue=box.open};box.appendChild(summary);box.appendChild(el("p","hint","Earlier deadlines stay here. Opening Today does not change their dates."));rows.forEach(function(row){box.appendChild(workCard(row))});return box;
 }
 
 function renderCalendar(main){
@@ -587,23 +549,19 @@ function renderCalendar(main){
   }
   if(!S.campaigns.length){box.appendChild(emptyHero());main.appendChild(box);return;}
   var v=S.calView,r=viewRange(),res;
-  if(v==="today"){
-    var od=overdueBlock();if(od)box.appendChild(od);
-    if(!renderFocus(box,r[0],r[1],false))
-      box.appendChild(el("div","note","Nothing due today, and no subtask dated today either."));
-  }else if(v==="next7"){
-    box.appendChild(weekStrip(r[0],r[1]));
-    var selected=S.focusDay&&S.focusDay>=r[0]&&S.focusDay<=r[1]?S.focusDay:"";
-    if(selected){
-      var dayHead=el("div","day-focus");dayHead.appendChild(el("h2",null,fmtLong(selected)));
-      var allDays=el("button","text-button","Show all 7 days");allDays.onclick=function(){S.focusDay="";render()};dayHead.appendChild(allDays);box.appendChild(dayHead);
-    }else{var od2=overdueBlock();if(od2)box.appendChild(od2)}
-    if(!renderFocus(box,selected||r[0],selected||r[1],true)){
-      var empty=el("div","no-results");empty.appendChild(el("h2",null,selected?"A clear day":"Nothing scheduled yet"));
-      empty.appendChild(el("p",null,selected?"No activities or checklist items are due on this day.":"Add an activity to start planning the week ahead."));
-      if(writable()){var add=el("button","btn btn-o","+ Add activity");add.onclick=function(){openActivity(null,selected||TODAY)};empty.appendChild(add)}
-      box.appendChild(empty);
+  if(v==="today"||v==="next7"){
+    var selected=v==="today"?TODAY:(S.focusDay&&S.focusDay>=r[0]&&S.focusDay<=r[1]?S.focusDay:"");
+    if(v==="next7")box.appendChild(weekStrip(r[0],r[1]));
+    if(selected||v==="today"){
+      if(v==="next7"){var selectedHead=el("div","day-focus");selectedHead.appendChild(el("h2",null,selected===TODAY?"Today · "+fmtLong(selected):fmtLong(selected)));var allDays=el("button","text-button","Show all 7 days");allDays.onclick=function(){S.focusDay="";render()};selectedHead.appendChild(allDays);box.appendChild(selectedHead)}
+      if(selected===TODAY){var overdue=overdueBlock();if(overdue)box.appendChild(overdue)}
+      if(!renderFocus(box,selected,selected,false))box.appendChild(el("div","note",S.workScope==="my"?"No work assigned to you on this date. Switch to Team work to see the team’s plan.":"No work due on this date."));
+    }else{
+      var overdue=overdueBlock();if(overdue)box.appendChild(overdue);var total=0;
+      for(var day=0;day<7;day++){var date=addDays(TODAY,day),holder=el("section","work-day"),title=day===0?"Today":day===1?"Tomorrow":DOW[dowIdx(date)];holder.appendChild(el("h2","work-day-title",title+" · "+fmtShort(date)));var count=renderFocus(holder,date,date,true);if(!count)holder.appendChild(el("p","hint","Nothing due"));total+=count;box.appendChild(holder)}
     }
+    var undated=workItems().filter(function(row){return !row.due&&!row.done}).length;if(undated)box.appendChild(el("div","note",undated+" work items need a parent deadline before they can appear on the calendar."));
+    if(S.workScope==="team"){var unassigned=workItems().filter(function(row){return !row.owner&&!row.done}).length;if(unassigned)box.appendChild(el("p","hint",unassigned+" work items have no owner. Assign a parent or individual owner so they appear in My work."))}
   }else if(phone){
     res=agendaList(r[0],r[1],false);box.appendChild(res.node);
     if(!res.total)box.appendChild(el("div","note","Nothing scheduled in "
@@ -628,7 +586,7 @@ function renderCampaigns(main){
   var filtered=S.campaigns.filter(campaignMatches);
   if(!filtered.length){main.appendChild(noResults("No matching campaigns","Try another search or clear your filters."));return}
   filtered.slice().sort(function(a,b){return a.startDate<b.startDate?1:-1}).forEach(function(c,n){
-    var acts=S.activities.filter(function(a){return a.campaignId===c.id});
+    var acts=S.activities.filter(function(a){return a.campaignId===c.id&&activityInWorkScope(a)});
     var pub=acts.filter(function(a){return a.status==="Published"}).length;
     var late=acts.filter(isLate).length;
     var card=el("div","card");card.style.setProperty("--c",c.colour);card.style.animationDelay=(n*50)+"ms";
@@ -686,20 +644,7 @@ function renderCampaigns(main){
         st.setAttribute("aria-expanded",S.expanded["a"+a.id]?"true":"false");
         st.onclick=function(e){e.stopPropagation();S.expanded["a"+a.id]=!S.expanded["a"+a.id];render()};
         r.appendChild(st);
-        var mk=el("button","mark s"+statusIdx(a.status));
-        mk.appendChild(el("i",null,"✓"));
-        mk.title=pub?"Published — click to move back to ready":"Mark published ("+a.status+")";
-        mk.setAttribute("aria-label",mk.title);
-        mk.disabled=!writable();
-        mk.onclick=function(e){
-          e.stopPropagation();
-          var next=pub?"Ready":"Published";
-          setField(a.id,{status:next},function(){
-            a.status=next;render();
-            toast(next==="Published"?"Marked published":"Moved back to ready");
-          });
-        };
-        r.appendChild(mk);
+        r.appendChild(completionControl(a,null));
         var rm=el("button","row-main");rm.setAttribute("data-focus-key","activity:"+a.id);
         rm.appendChild(el("span","d",fmtShort(a.dueDate)));
         rm.appendChild(el("span","n",a.title));
@@ -755,14 +700,15 @@ function platPill(p){
   var s=el("span","sub-plat",platAbbr(p));s.title=p;return s;
 }
 function subtaskDeadline(a,s,onSaved){
-  var late=!!s.due&&s.due<TODAY&&!nodeDone(s);
-  var date=s.due?(s.due.slice(0,4)===TODAY.slice(0,4)?fmtShort(s.due):fmtLong(s.due)):"";
-  var deadline=el(writable()?"button":"span","sub-deadline"+(late?" overdue":"")+(!s.due?" unset":""),s.due?date:"Set deadline");
-  deadline.title=s.due?"Deadline: "+fmtLong(s.due)+(late?" · overdue":""):"No deadline set";deadline.setAttribute("data-focus-key","deadline:"+a.id+":"+s.id);
+  var context=effectiveWork(a).find(function(row){return row.id===s.id}),due=context?context.due:s.due||a.dueDate||"",inherited=!s.due&&!!due,late=!!due&&due<TODAY&&!nodeDone(s);
+  var date=due?(due.slice(0,4)===TODAY.slice(0,4)?fmtShort(due):fmtLong(due)):"";
+  var deadline=el(writable()?"button":"span","sub-deadline"+(late?" overdue":"")+(inherited?" inherited":"")+(!due?" unset":""),due?date:"Set deadline");
+  deadline.title=due?"Deadline: "+fmtLong(due)+(inherited?" · inherited from "+(context?context.source:a.title):"")+(late?" · overdue":""):"No parent deadline set";deadline.setAttribute("data-focus-key","deadline:"+a.id+":"+s.id);
+  if(inherited)deadline.appendChild(el("small","inherited-date","Inherited"));
   if(writable()){
-    deadline.setAttribute("aria-label",(s.due?"Change deadline for ":"Set deadline for ")+(s.title||"Untitled subtask")+(s.due?": "+fmtLong(s.due):""));
+    deadline.setAttribute("aria-label",(due?"Change deadline for ":"Set deadline for ")+(s.title||"Untitled subtask")+(due?": "+fmtLong(due):""));
     deadline.onclick=function(){openSubtask(a,s,onSaved,true)};
-  }else if(!s.due)deadline.textContent="No deadline";
+  }else if(!due)deadline.textContent="No deadline";
   return deadline;
 }
 function kids(n){return (n&&n.children)||[]}
@@ -827,6 +773,7 @@ function saveSubs(a,arr){a.subtasks=arr;var saved=persistSubs(a);render();return
 function copyNodes(nodes,offset){
   return (nodes||[]).map(function(n){var copy=Object.assign({},n,{id:sid(),done:false,
     due:n.due?addDays(n.due,offset||0):"",children:copyNodes(kids(n),offset)});
+    delete copy.completedAt;
     if(n.sopSource)copy.sopSource=Object.assign({},n.sopSource,{baseline:Object.assign({},n.sopSource.baseline,{due:n.sopSource.baseline.due?addDays(n.sopSource.baseline.due,offset||0):""})});
     return copy;
   });
@@ -845,7 +792,7 @@ function insertAfter(nodes,id,copy){
 }
 function treeDepth(nodes){return (nodes||[]).reduce(function(max,n){return Math.max(max,1+treeDepth(kids(n)))},0)}
 function copyActivity(a,date,campaignId){
-  var copy=Object.assign({},a);delete copy.id;
+  var copy=Object.assign({},a);delete copy.id;delete copy.completedAt;
   copy.campaignId=campaignId||a.campaignId;copy.dueDate=date;copy.status="Not started";copy.assets={};
   copy.subtasks=copyNodes(a.subtasks,daysBetween(a.dueDate,date));copy.createdAt=new Date().toISOString();
   delete copy.repeat;return copy;
@@ -1389,9 +1336,11 @@ function checklistTools(a,onChange){
   if(a.status!=="Published"){var ai=el("button","tpl-btn","Suggest tasks with AI");ai.setAttribute("aria-label","Suggest tasks with AI for "+a.title);ai.onclick=function(){if(hasOverlayChanges()){toast("Save the activity details first, then ask AI for tasks.");return}openActivityPlanner(a,onChange)};bar.appendChild(ai)}return bar;
 }
 function subReuseActions(a,s,depth,onChange){
+  s=nodeById(a.subtasks,s.id)||s;
   var menu=el("details","reuse-menu"),summary=el("summary",null,"⋯");summary.title="Subtask actions";summary.setAttribute("aria-label","Actions for "+s.title);menu.appendChild(summary);
   function action(label,fn){var b=el("button",null,label);b.onclick=function(){menu.open=false;fn()};menu.appendChild(b)}
   action("Duplicate",function(){var copy=copyIndependentSubtask(s);copy.title+=" (copy)";a.subtasks=insertAfter(a.subtasks,s.id,copy);onChange();toast("Subtask duplicated")});
+  if(depth<MAXDEPTH-1&&a.status!=="Published"&&!(s.done&&!kids(s).length))action("Break down with AI",function(){if(hasOverlayChanges()){toast("Save the current details first, then break this task down.");return}openActivityPlanner(a,onChange,s.id)});
   if(depth<MAXDEPTH-1)action("Browse SOPs to add inside",function(){openTemplatePicker(a,s.id,depth+1,function(nodes,parent,ruleId){saveSubtaskWithSops(a,s.id,{},[ruleId],true).then(function(saved){a.subtasks=saved.subtasks;S.expanded["n"+s.id]=true;onChange()}).catch(function(e){toast(e.userMessage||msgFor(e))})})});return menu;
 }
 
@@ -1449,29 +1398,24 @@ function subAddInput(a,parentId,ph){
 
 function subNodes(host,a,nodes,depth){
   nodes.forEach(function(s){
-    var ch=kids(s),group=ch.length>0,open=nodeOpen(s.id);
+    var raw=nodeById(a.subtasks,s.id)||s,ch=kids(s),group=ch.length>0,open=nodeOpen(s.id);
     var r=el("div","sub-row"+(group?" grp":""));
     if(group){
       var cv=el("button","sub-tgl",open?"▾":"▸");
       cv.title=open?"Collapse":"Expand";
       cv.onclick=function(e){e.stopPropagation();S.expanded["n"+s.id]=!open;render()};
       r.appendChild(cv);
-    }else{
-      var cb=el("button","sub-chk");cb.setAttribute("aria-pressed",s.done?"true":"false");
-      cb.appendChild(el("i",null,"✓"));cb.disabled=!writable();
-      cb.title=s.done?"Mark not done":"Mark done";
-      cb.onclick=function(){saveSubs(a,patchNode(a.subtasks,s.id,{done:!s.done}))};
-      r.appendChild(cb);
     }
+    r.appendChild(completionControl(a,nodeById(a.subtasks,s.id)||s));
     r.appendChild(subtaskDeadline(a,s));
-    var subTitle=el("button","sub-t sub-title-button"+(nodeDone(s)?" done":""),s.title);
+    var subTitle=el("button","sub-t sub-title-button"+(nodeDone(raw)?" done":""),s.title);
     subTitle.setAttribute("aria-label","Edit subtask: "+s.title);
     subTitle.onclick=function(){openSubtask(a,s)};r.appendChild(subTitle);
     if(writable())r.appendChild(subtaskEditButton(a,s));
     if(writable())r.appendChild(subReuseActions(a,s,depth,function(){persistSubs(a);render()}));
     var mt=el("span","sub-meta");
     if(group){
-      var n=nodeCount(s),pg=el("span","sub-count",n[0]+"/"+n[1]);
+      var n=nodeCount(raw),pg=el("span","sub-count",n[0]+"/"+n[1]);
       if(n[1]&&n[0]===n[1])pg.classList.add("ok");
       mt.appendChild(pg);
     }
@@ -1533,7 +1477,7 @@ function subNodes(host,a,nodes,depth){
 function subtaskTree(a){
   var box=el("div","subs"),subs=a.subtasks||[];
   if(!subs.length&&!writable())box.appendChild(el("div","sub-empty","No subtasks."));
-  subNodes(box,a,subs,0);
+  subNodes(box,a,scopedNodes(a,subs),0);
   if(writable()){
     box.appendChild(subAddInput(a,null,"+ Add a subtask"));
     box.appendChild(checklistTools(a,function(){persistSubs(a);render()}));
@@ -1584,7 +1528,7 @@ function quickAdd(c){
     go.disabled=true;go.textContent="…";
     var payload=applySopRules({campaignId:c.id,title:t,type:fs.value,angle:ang,cta:"",
       platforms:f?f.platforms.slice():[],
-      dueDate:dt.value||TODAY,dueTime:tm.value,owner:"",status:"Not started",description:"",
+      dueDate:dt.value||TODAY,dueTime:tm.value,owner:(S.me&&S.me.id)||"",status:"Not started",description:"",
       keywords:[],script:"",subtasks:[],createdAt:new Date().toISOString()},selectedSops);
     db.collection("activities").add(payload)
       .then(function(){S.focusAdd="c"+c.id;render();toast("Added to "+c.name)})
@@ -1905,7 +1849,7 @@ function openSubtask(a,s,onSaved,focusDeadline){
   function drawTopic(){clear(topicWrap);var topic=sopTopicSelect(draft.type||parent.type,draft.angle,"Use parent topic");topic.onchange=function(){draft.angle=topic.value;drawNudge()};topicWrap.appendChild(field("Topic / category",topic))}
   platform.onchange=function(){draft.platform=platform.value;drawNudge()};format.onchange=function(){draft.type=format.value;draft.angle="";drawTopic();drawNudge()};drawTopic();drawNudge();
   var description=el("textarea","subtask-description-input");description.value=draft.description;description.rows=4;description.placeholder="Instructions, links or acceptance criteria…";description.oninput=function(){draft.description=description.value};body.appendChild(field("Description (optional)",description));
-  var planning=el("div","f2"),date=input("date",draft.due);if(focusDeadline)date.autofocus=true;date.oninput=function(){draft.due=date.value};planning.appendChild(field("Deadline (optional)",date));planning.appendChild(field("Owner (optional)",ownerPicker(draft.owner,function(id){draft.owner=id})));body.appendChild(planning);
+  var planning=el("div","f2"),date=input("date",draft.due);if(focusDeadline)date.autofocus=true;date.oninput=function(){draft.due=date.value};var inherited=effectiveWork(a).find(function(row){return row.id===s.id});planning.appendChild(field("Deadline (optional)",date,"Leave blank to inherit "+(inherited&&inherited.parentDue?fmtLong(inherited.parentDue):"the parent deadline")+". An explicit date stays independent."));planning.appendChild(field("Owner (optional)",ownerPicker(draft.owner,function(id){draft.owner=id})));body.appendChild(planning);
   var kind=dropdown(SUBKINDS.map(function(k){return[k,k]}),draft.kind,"Not set");kind.onchange=function(){draft.kind=kind.value};conditions.body.appendChild(field("Work type (optional)",kind,"The production step, such as Script, Edit or Thumbnail."));body.insertBefore(planning,conditions.node);body.insertBefore(description.parentElement,conditions.node);
   var err=el("p","hint err");err.hidden=true;err.setAttribute("role","alert");body.appendChild(err);
   var foot=el("div","p-foot");foot.appendChild(el("p","required-note","Save to update this subtask and add any selected SOP steps."));
@@ -1913,7 +1857,7 @@ function openSubtask(a,s,onSaved,focusDeadline){
   function validate(){save.disabled=saving||!draft.title.trim()||!writable();return !save.disabled}
   save.onclick=function(){
     if(!validate())return;var changes={};Object.keys(original).forEach(function(key){var value=key==="title"?draft[key].trim():draft[key];if(value!==original[key])changes[key]=value});
-    if(!Object.keys(changes).length&&!selected.length){closeOverlay(true);return}
+    if(!draft.due&&!(inherited&&inherited.parentDue)){err.textContent="Set the parent task deadline or choose a deadline here before saving.";err.hidden=false;return}if(!Object.keys(changes).length&&!selected.length){closeOverlay(true);return}
     saving=true;validate();save.textContent="Saving…";err.hidden=true;cancel.disabled=true;close.disabled=true;body.querySelectorAll("input,textarea,select,button").forEach(function(control){control.disabled=true});
     var editingState=overlayState;editingState.busy=true;var write=saveSubtaskWithSops(a,s.id,changes,selected);wq=write.catch(function(){});
     write.then(function(saved){editingState.busy=false;if(overlayState===editingState)closeOverlay(true);if(onSaved)onSaved(saved);render();toast("Subtask saved")}).catch(function(e){
@@ -1938,7 +1882,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
     platforms:a?(a.platforms||[]).slice():((pf.platforms||[]).slice()),
     dueDate:a?a.dueDate:(presetDate||TODAY),
     dueTime:a?(a.dueTime||""):(pf.time||""),
-    owner:a?(a.owner||""):"",
+    owner:a?(a.owner||""):((S.me&&S.me.id)||""),
     description:a?(a.description||""):"",
     keywords:a?(a.keywords||[]).slice():[],
     script:a?(a.script||""):"",manualSops:[],selectedSopIds:[],templateAnchor:presetDate||TODAY,repeat:{unit:"",count:1}
@@ -2099,19 +2043,11 @@ function openActivity(a,presetDate,presetCampaign,preset){
     };
     var psNodes=function(nodes,depth){
       nodes.forEach(function(s){
-        var ch=kids(s),group=ch.length>0;
+        var raw=nodeById(a.subtasks,s.id)||s,ch=kids(s),group=ch.length>0;
         var r=el("div","ps-row dep"+Math.min(depth,MAXDEPTH)+(group?" grp":""));
-        if(group){
-          var n=nodeCount(s),pg=el("span","sub-count",n[0]+"/"+n[1]);
-          if(n[1]&&n[0]===n[1])pg.classList.add("ok");
-          r.appendChild(pg);
-        }else{
-          var cb=el("button","sub-chk");cb.setAttribute("aria-pressed",s.done?"true":"false");
-          cb.appendChild(el("i",null,"✓"));cb.title=s.done?"Mark not done":"Mark done";
-          cb.onclick=function(){patchSub(s.id,{done:!s.done})};
-          r.appendChild(cb);
-        }
-        var ti=input("text",s.title);ti.className="ps-title"+(nodeDone(s)?" done":"");
+        if(group){var n=nodeCount(raw),pg=el("span","sub-count",n[0]+"/"+n[1]);if(n[1]&&n[0]===n[1])pg.classList.add("ok");r.appendChild(pg)}
+        r.appendChild(completionControl(a,s,function(saved){a.subtasks=saved.subtasks;drawSubs(null)}));
+        var ti=input("text",s.title);ti.className="ps-title"+(nodeDone(raw)?" done":"");
         ti.placeholder="Name this item…";ti.setAttribute("data-pfocus","t"+s.id);
         ti.onchange=function(){
           var v=ti.value.trim();
@@ -2150,7 +2086,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
         dd.onchange=function(){patchSub(s.id,{due:dd.value})};
         var op=ownerPicker(s.owner,function(id){patchSub(s.id,{owner:id})});
         op.classList.add("ps-own");
-        var deadlineField=field("Deadline",dd);deadlineField.classList.add("ps-deadline");
+        var effective=effectiveWork(a).find(function(row){return row.id===s.id}),deadlineField=field("Deadline",dd,s.due?"Custom deadline":effective&&effective.due?"Using "+fmtShort(effective.due)+" from parent":"Set a parent deadline");deadlineField.classList.add("ps-deadline");
         two.appendChild(pf2);two.appendChild(kd);two.appendChild(deadlineField);two.appendChild(op);
         r.appendChild(two);
         sbox.appendChild(r);
@@ -2168,7 +2104,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
     drawSubs=function(focusKey){
       var scrollTop=body.scrollTop,scrollLeft=body.scrollLeft,oldFocus=document.activeElement,key=returnFocusKey(oldFocus);
       clear(sbox);
-      psNodes(a.subtasks||[],0);
+      psNodes(scopedNodes(a,a.subtasks||[]),0);
       var ai=el("input");ai.type="text";ai.className="sub-add";
       ai.placeholder="+ Add an item and press Enter";
       ai.setAttribute("data-pfocus","add");
@@ -2333,32 +2269,33 @@ function aiReferenceCandidates(current){
 }
 function aiSopSources(a){var seen={};return allSopRules().filter(function(r){return (a.appliedSopRules||[]).indexOf(r.id)>=0}).concat(sopMatches(a)).filter(function(r){if(seen[r.id])return false;seen[r.id]=true;return true}).slice(0,3)}
 function aiContextSteps(nodes,limit,maxChars){var remaining=maxChars||8000,out=[];aiChecklistContext(nodes).slice(0,limit).some(function(n){var row=Object.assign({},n,{title:String(n.title||"").slice(0,180),phase:n.phase.slice(0,180),description:n.description.slice(0,400)}),size=JSON.stringify(row).length;if(size>remaining)return true;remaining-=size;out.push(row);return false});return out}
-function aiWorkRequest(current,referenceIds,sopIds,brief,direction){
-  var campaign=campById(current.campaignId);
-  return {activity:{title:current.title,type:current.type,platforms:current.platforms,angle:current.angle,dueDate:current.dueDate,status:current.status,description:(current.description||"").slice(0,1000),campaign:{name:campaign?campaign.name:"",goal:campaign?campaign.goal||"":""}},brief:brief,directionPrompt:direction,today:TODAY,
+function aiWorkRequest(current,referenceIds,sopIds,brief,direction,targetId){
+  var campaign=campById(current.campaignId),location=targetId?subtaskLocation(current,targetId):null;if(targetId&&!location)throw new Error("This task no longer exists.");
+  return {target:location?{id:location.node.id,title:location.node.title,description:location.node.description||"",depth:location.depth,due:(effectiveWork(current).find(function(row){return row.id===targetId})||{}).due||current.dueDate,done:nodeDone(location.node),hasChildren:!!kids(location.node).length}:null,activity:{title:current.title,type:current.type,platforms:current.platforms,angle:current.angle,dueDate:current.dueDate,status:current.status,description:(current.description||"").slice(0,1000),campaign:{name:campaign?campaign.name:"",goal:campaign?campaign.goal||"":""}},brief:brief,directionPrompt:direction,today:TODAY,
     existing:aiContextSteps(current.subtasks,100,12000),references:referenceIds.slice(0,3).map(function(id){return S.activities.find(function(a){return a.id===id&&a.id!==current.id})}).filter(Boolean).map(function(a){return {id:"work:"+a.id,title:a.title,type:a.type,platforms:a.platforms||[],angle:a.angle||"",description:(a.description||"").slice(0,600),status:a.status,steps:aiContextSteps(aiReferenceChecklist(a.subtasks),30,4500)}}).filter(function(a){return a.steps.length}),
     sops:allSopRules().filter(function(r){return sopIds.indexOf(r.id)>=0}).slice(0,3).map(function(r){return {id:"sop:"+r.id,name:r.name,conditions:sopConditions(r),steps:aiContextSteps(sopNodes(r),40,6000)}})};
 }
-function appendAiChecklist(a,phases,planId,brief){
-  if(a.status==="Published")throw new Error("This activity is published. Reopen it before adding production tasks.");
+function appendAiChecklist(a,phases,planId,brief,targetId){
+  if(a.status==="Published")throw new Error("This activity is complete. Reopen it before adding tasks.");
   if((a.appliedAiPlans||[]).indexOf(planId)>=0)return {activity:a,added:0};
-  var nodes=(a.subtasks||[]).slice(),titles=aiChecklistContext(nodes).map(function(n){return n.title.trim().toLowerCase()}),count=0;
-  phases.forEach(function(phase){var name=phase.title.trim();if(!name)throw new Error("Give every phase a name.");var tasks=[];
-    phase.tasks.forEach(function(task){var title=task.title.trim();if(!title)throw new Error("Give every selected task a title.");
-      if(task.dueDate&&(!/^\d{4}-\d{2}-\d{2}$/.test(task.dueDate)||task.dueDate<TODAY||task.dueDate>addDays(a.dueDate>TODAY?a.dueDate:TODAY,7)))throw new Error("Review task dates. The activity deadline may have changed.");
-      var key=title.toLowerCase();if(titles.indexOf(key)>=0)return;titles.push(key);var n=newNode(title);n.description=task.description;n.due=task.dueDate||"";n.aiPlanId=planId;n.aiOriginal={title:title,description:task.description};if(task.basis)n.aiBasis=task.basis;tasks.push(n);count++;
-    });if(!tasks.length)return;
-    var index=nodes.findIndex(function(n){return kids(n).length&&n.title.trim().toLowerCase()===name.toLowerCase()});
-    if(index>=0)nodes[index]=Object.assign({},nodes[index],{children:kids(nodes[index]).concat(tasks)});
-    else {var group=newNode(name);group.description=phase.why;group.children=tasks;group.aiPlanId=planId;nodes.push(group)}
-  });
+  var location=targetId?subtaskLocation(a,targetId):null;if(targetId&&!location)throw new Error("This task no longer exists.");
+  if(location&&(location.depth>=MAXDEPTH-1||(!kids(location.node).length&&location.node.done)))throw new Error("Reopen this task or use its parent to add more subtasks.");
+  var depth=location?location.depth+1:0,flat=depth===MAXDEPTH-1,base=location?kids(location.node):a.subtasks||[],known=aiChecklistContext(base).map(function(n){return n.title.trim().toLowerCase()}),count=0;
+  function make(task){var title=task.title.trim();if(!title||!task.description.trim())throw new Error("Name each selected task and include its instructions.");if(task.dueDate&&(task.dueDate<TODAY||task.dueDate>addDays(a.dueDate>TODAY?a.dueDate:TODAY,7)))throw new Error("Review the task deadlines before adding.");var node=newNode(title);node.description=task.description;node.due=task.dueDate||"";node.aiPlanId=planId;node.aiOriginal={title:title,description:task.description};if(task.basis)node.aiBasis=task.basis;node.children=(task.children||[]).map(make);return node}
+  var incoming=flat?phases.reduce(function(out,p){return out.concat(p.tasks.map(make))},[]):phases.map(function(p){var group=newNode(p.title.trim());if(!group.title)throw new Error("Name each phase.");group.description=p.why;group.aiPlanId=planId;group.children=p.tasks.map(make);return group});
+  if(treeDepth(incoming)+depth>MAXDEPTH)throw new Error("This breakdown is too deep. Use the parent task or fewer levels.");
+  function merge(existing,added,isPhase){var out=existing.slice();added.forEach(function(n){var key=n.title.toLowerCase(),index=out.findIndex(function(old){return old.title.trim().toLowerCase()===key});if(index>=0){var old=out[index];if(kids(n).length&&!(old.done&&!kids(old).length))out[index]=Object.assign({},old,{children:merge(kids(old),kids(n),false)});return}
+    if(kids(n).length){var children=merge([],kids(n),false);if(!children.length)return;n=Object.assign({},n,{children:children})}else if(known.indexOf(key)>=0)return;
+    known.push(key);out.push(n);if(!isPhase)count++;
+  });return out}
+  var next=merge(base,incoming,!flat),nodes=location?patchNode(a.subtasks,targetId,{children:next}):next;
   return {activity:Object.assign({},a,{subtasks:nodes,aiBrief:brief,appliedAiPlans:(a.appliedAiPlans||[]).concat([planId]).slice(-100)}),added:count};
 }
-function saveAiChecklist(a,phases,planId,brief){
+function saveAiChecklist(a,phases,planId,brief,targetId){
   return wq.then(function(){return db.runTransaction(function(tx){var ref=db.doc("activities/"+a.id);return tx.get(ref).then(function(snap){
-    if(!snap.exists)throw new Error("This activity no longer exists.");var result=appendAiChecklist(Object.assign({id:a.id},snap.data()),phases,planId,brief);
-    if(result.activity!==a)tx.update(ref,{subtasks:result.activity.subtasks,aiBrief:result.activity.aiBrief||brief,appliedAiPlans:result.activity.appliedAiPlans||[]});return result;
-  })})}).then(function(result){Object.assign(a,result.activity);S.activities=S.activities.map(function(current){return current.id===a.id?result.activity:current});render();return result});
+    if(!snap.exists)throw new Error("This activity no longer exists.");var result=appendAiChecklist(Object.assign({id:a.id},snap.data()),phases,planId,brief,targetId);
+    tx.update(ref,{subtasks:result.activity.subtasks,aiBrief:result.activity.aiBrief||brief,appliedAiPlans:result.activity.appliedAiPlans||[]});return result;
+  })})}).then(function(result){Object.assign(a,result.activity);S.activities=S.activities.map(function(current){return current.id===a.id?result.activity:current});if(targetId)S.expanded["n"+targetId]=true;render();return result});
 }
 function saveAiDirection(direction,audience){
   if(!S.me||!S.me.id)return Promise.reject(new Error("Sign in again to save your AI direction."));
@@ -2366,16 +2303,17 @@ function saveAiDirection(direction,audience){
   if(!settings.directionPrompt||settings.directionPrompt.length>6000)return Promise.reject(new Error("Keep the AI system prompt between 1 and 6,000 characters."));
   return db.doc("users/"+S.me.id).set({aiPlanning:settings},{merge:true}).then(function(){S.aiPlanning=settings;return settings});
 }
-function openActivityPlanner(a,onSaved){
+function openActivityPlanner(a,onSaved,targetId){
   if(!writable())return;
-  var ui=actionDialog("Plan video tasks with AI","Suggest phases and missing tasks for “"+a.title+"”. Your existing checklist stays intact; you choose what to add.");ui.node.classList.add("ai-planner");
+  var target=targetId?subtaskLocation(a,targetId):null;if(targetId&&(!target||target.depth>=MAXDEPTH-1)){toast("Use the parent task to add more levels.");return}
+  var ui=actionDialog(target?"Break down task with AI":"Plan video tasks with AI","Suggest phases and missing tasks for “"+a.title+"”. Your existing checklist stays intact; you choose what to add.");ui.node.classList.add("ai-planner");if(target)ui.node.querySelector(".form-intro").textContent="Break down “"+target.node.title+"” into subtasks. The result will be added inside this task.";
   var saved=a.aiBrief||{},settings=S.aiPlanning||{},brief=el("div","ai-brief"),results=el("div","ai-results"),status=el("p","hint","Checking AI availability…"),ready=false,working=false,plan=null,planId=sid(),drafts=[],defaultDirection="",directionTouched=false;
   var referenceIds=aiReferenceCandidates(a).slice(0,3).map(function(r){return r.activity.id}),sopIds=aiSopSources(a).map(function(r){return r.id}),sourcesTouched=false;
   var listedReferences=referenceIds.slice(),listedSops=sopIds.slice();
   results.hidden=true;ui.body.appendChild(status);ui.body.appendChild(brief);ui.body.appendChild(results);
   var context=el("p","ai-video-context",[a.type].concat(a.platforms||[]).concat([a.angle,fmtLong(a.dueDate)]).filter(Boolean).join(" · "));brief.appendChild(context);
   brief.appendChild(el("p","ai-role-summary","Creative director · Instagram & YouTube specialist · Growth strategist"));
-  var campaign=campById(a.campaignId),goal=el("textarea");goal.rows=2;goal.value=saved.goal||(a.description||"").slice(0,700)||(campaign&&campaign.goal)||"Plan “"+a.title+"” using its saved checklist and relevant examples.";goal.maxLength=1000;goal.placeholder="e.g. Tell a nursing success story that motivates aspirants to keep preparing";
+  var campaign=campById(a.campaignId),goal=el("textarea");goal.rows=2;goal.value=target?"Break down “"+target.node.title+"” into clear, actionable subtasks. "+(target.node.description||""):saved.goal||(a.description||"").slice(0,700)||(campaign&&campaign.goal)||"Plan “"+a.title+"” using its saved checklist and relevant examples.";goal.maxLength=1000;goal.placeholder="e.g. Tell a nursing success story that motivates aspirants to keep preparing";
   var audience=input("text",saved.audience||settings.audience||"Nursing exam aspirants","Who is watching this video?");audience.maxLength=600;
   brief.appendChild(field("What should this video achieve? *",goal));brief.appendChild(field("Who is it for? *",audience));
   var extra=disclosure("Constraints & context","Capacity, tone, resources or anything to avoid"),constraints=el("textarea");constraints.rows=3;constraints.maxLength=1000;constraints.value=saved.constraints||"";constraints.placeholder="e.g. A 45-second video using an interview we already recorded; no new shoot";extra.body.appendChild(field("Constraints",constraints));brief.appendChild(extra.node);
@@ -2405,8 +2343,9 @@ function openActivityPlanner(a,onSaved){
   var pricing=el("a",null,"Google data-use and pricing terms");pricing.href="https://ai.google.dev/gemini-api/docs/pricing";pricing.target="_blank";pricing.rel="noopener noreferrer";sharing.appendChild(document.createTextNode(" "));sharing.appendChild(pricing);
   var generate=el("button","btn btn-p sp","Suggest phases & tasks"),add=el("button","btn btn-p sp","Add selected tasks"),back=el("button","btn btn-o","Edit brief");add.hidden=true;back.hidden=true;ui.foot.appendChild(back);ui.foot.appendChild(generate);ui.foot.appendChild(add);
   function values(){return {goal:goal.value.trim(),audience:audience.value.trim(),constraints:constraints.value.trim()}}
-  function chosen(){return drafts.reduce(function(count,p){return count+p.tasks.filter(function(t){return t.selected}).length},0)}
-  function validate(){var directionValid=!!direction.value.trim()&&direction.value.length<=6000;generate.disabled=working||!ready||!values().goal||!values().audience||!directionValid;saveDirection.disabled=working||!directionValid||!audience.value.trim();resetDirection.disabled=working||!defaultDirection;copyDirection.disabled=working||!direction.value.trim();var count=chosen();add.textContent="Add "+count+" "+(count===1?"task":"tasks");add.disabled=working||!count||drafts.some(function(p){return p.tasks.some(function(t){return t.selected&&(!p.title.trim()||!t.title.trim()||!t.description.trim()||t.description.length>2200||(t.dueDate&&(t.dueDate<TODAY||t.dueDate>addDays(a.dueDate>TODAY?a.dueDate:TODAY,7))))})});}
+  function allDraftTasks(){var out=[];function walk(tasks){tasks.forEach(function(t){out.push(t);walk(t.children||[])})}drafts.forEach(function(p){walk(p.tasks)});return out}
+  function chosen(){return allDraftTasks().filter(function(t){return t.selected}).length}
+  function validate(){var directionValid=!!direction.value.trim()&&direction.value.length<=6000;generate.disabled=working||!ready||!values().goal||!values().audience||!directionValid;saveDirection.disabled=working||!directionValid||!audience.value.trim();resetDirection.disabled=working||!defaultDirection;copyDirection.disabled=working||!direction.value.trim();var count=chosen();add.textContent="Add "+count+" "+(count===1?"task":"tasks");add.disabled=working||!count||drafts.some(function(p){return p.tasks.some(function(t){return t.selected&&!p.title.trim()})})||allDraftTasks().some(function(t){return t.selected&&(!t.title.trim()||!t.description.trim()||t.description.length>2200||(t.dueDate&&(t.dueDate<TODAY||t.dueDate>addDays(a.dueDate>TODAY?a.dueDate:TODAY,7))))});}
   [goal,audience,constraints].forEach(function(n){n.oninput=validate});
   back.onclick=function(){results.hidden=true;brief.hidden=false;generate.hidden=false;back.hidden=true;add.hidden=true;goal.focus()};
   function busy(value){working=value;overlayState.busy=value;ui.close.disabled=value;ui.cancel.disabled=value;ui.body.querySelectorAll("input,textarea,select,button").forEach(function(n){n.disabled=value});back.disabled=value;validate()}
@@ -2416,22 +2355,22 @@ function openActivityPlanner(a,onSaved){
     if(plan.assumptions.length){var assumptions=el("details"),summary=el("summary",null,"Assumptions to check ("+plan.assumptions.length+")");assumptions.appendChild(summary);var list=el("ul","sop-steps");plan.assumptions.forEach(function(s){list.appendChild(el("li",null,s))});assumptions.appendChild(list);results.appendChild(assumptions)}
     results.appendChild(el("p","hint",drafts.length?"Tasks based on your work are selected. New suggestions are optional. Check the source and reason, edit as needed, then add only what helps.":"No missing tasks found. Your existing checklist is kept; AI does not need to add work just to fill a list."));
     var taskIndex=0;drafts.forEach(function(phase,i){var section=el("section","ai-phase"),title=input("text",phase.title);title.maxLength=100;title.className="ai-phase-title";title.setAttribute("aria-label","Phase name "+(i+1));title.oninput=function(){phase.title=title.value;validate()};section.appendChild(title);section.appendChild(el("p","hint",phase.why));
-      phase.tasks.forEach(function(task){var index=++taskIndex,card=el("div","ai-step"),check=input("checkbox","");check.checked=task.selected;check.setAttribute("aria-label","Include "+task.title);check.onchange=function(){task.selected=check.checked;validate()};card.appendChild(check);
+      function drawTask(task,depth,ancestors){var index=++taskIndex,card=el("div","ai-step"),check=input("checkbox","");card.style.marginLeft=(depth*20)+"px";check.checked=task.selected;check.setAttribute("aria-label","Include "+task.title);check.onchange=function(){function select(t,value){t.selected=value;(t.children||[]).forEach(function(c){select(c,value)})}select(task,check.checked);if(check.checked)ancestors.forEach(function(parent){parent.selected=true});drawPlan()};card.appendChild(check);
         var content=el("div","ai-step-content"),name=input("text",task.title);name.maxLength=180;name.setAttribute("aria-label","Suggested task title "+index);name.oninput=function(){task.title=name.value;validate()};content.appendChild(name);
         var basis=task.basis||{sourceIds:[],reason:"New suggestion"},sourceNames=(basis.sources||[]).map(function(source){return source.title});content.appendChild(el("p","ai-task-basis"+(sourceNames.length?"":" is-new"),sourceNames.length?"Based on: "+sourceNames.join(" · "):"New suggestion · Optional"));content.appendChild(el("p","hint",basis.reason));
         var instructions=el("details","ai-task-instructions"),instructionsSummary=el("summary",null,"Direction & draft copy"),description=el("textarea");description.rows=6;description.maxLength=2200;description.value=task.description;description.setAttribute("aria-label","Instructions for task "+index);description.oninput=function(){task.description=description.value;validate()};instructions.appendChild(instructionsSummary);instructions.appendChild(description);content.appendChild(instructions);
-        var due=input("date",task.dueDate);due.min=TODAY;due.max=addDays(a.dueDate>TODAY?a.dueDate:TODAY,7);due.setAttribute("aria-label","Due date for task "+index);content.appendChild(field("Task deadline (optional)",due));due.oninput=function(){task.dueDate=due.value;validate()};card.appendChild(content);section.appendChild(card);
-      });results.appendChild(section);
+        var due=input("date",task.dueDate);due.min=TODAY;due.max=addDays(a.dueDate>TODAY?a.dueDate:TODAY,7);due.setAttribute("aria-label","Due date for task "+index);content.appendChild(field("Task deadline (inherits when blank)",due));due.oninput=function(){task.dueDate=due.value;validate()};card.appendChild(content);section.appendChild(card);(task.children||[]).forEach(function(child){drawTask(child,depth+1,ancestors.concat(task))});
+      }phase.tasks.forEach(function(task){drawTask(task,0,[])});results.appendChild(section);
     });results.hidden=false;brief.hidden=true;generate.hidden=true;back.hidden=false;add.hidden=false;validate();
   }
   generate.onclick=function(){
     validate();if(generate.disabled)return;ui.error.hidden=true;busy(true);generate.textContent="Planning video tasks…";status.textContent="Reviewing the video and its existing checklist…";
     var current=S.activities.find(function(n){return n.id===a.id});if(!current){busy(false);ui.error.textContent="This activity no longer exists.";ui.error.hidden=false;return}
-    wq.then(function(){var latest=S.activities.find(function(n){return n.id===a.id});if(!latest)throw new Error("This activity no longer exists.");return aiRequest("POST",aiWorkRequest(latest,referenceIds,sopIds,values(),direction.value.trim()))}).then(function(data){plan=data.plan;drafts=plan.phases.map(function(p){return {title:p.title,why:p.why,tasks:p.tasks.map(function(t){var basis=Object.assign({sourceIds:[],reason:"New suggestion"},t.basis);basis.sources=(plan.sources||[]).filter(function(source){return basis.sourceIds.indexOf(source.id)>=0});return Object.assign({},t,{basis:basis,selected:basis.sources.length>0})})}});planId=sid();status.textContent="Draft from "+data.model+((plan.sources||[]).length?" · Using the supplied saved work":" · No saved sources; new suggestions only");drawPlan()}).catch(function(e){status.textContent="Your checklist is unchanged.";ui.error.textContent=e.message||"AI could not suggest tasks. Please try again.";ui.error.hidden=false}).finally(function(){busy(false);generate.textContent="Suggest phases & tasks"});
+    wq.then(function(){var latest=S.activities.find(function(n){return n.id===a.id});if(!latest)throw new Error("This activity no longer exists.");return aiRequest("POST",aiWorkRequest(latest,referenceIds,sopIds,values(),direction.value.trim(),targetId))}).then(function(data){plan=data.plan;function draftTask(t){var basis=Object.assign({sourceIds:[],reason:"New suggestion"},t.basis);basis.sources=(plan.sources||[]).filter(function(source){return basis.sourceIds.indexOf(source.id)>=0});var children=(t.children||[]).map(draftTask);return Object.assign({},t,{basis:basis,children:children,selected:basis.sources.length>0||children.some(function(c){return c.selected})})}drafts=plan.phases.map(function(p){return {title:p.title,why:p.why,tasks:p.tasks.map(draftTask)}});planId=sid();status.textContent="Draft from "+data.model+((plan.sources||[]).length?" · Using the supplied saved work":" · No saved sources; new suggestions only");drawPlan()}).catch(function(e){status.textContent="Your checklist is unchanged.";ui.error.textContent=e.message||"AI could not suggest tasks. Please try again.";ui.error.hidden=false}).finally(function(){busy(false);generate.textContent="Suggest phases & tasks"});
   };
   add.onclick=function(){
-    validate();if(add.disabled)return;ui.error.hidden=true;busy(true);var selected=drafts.map(function(p){return {title:p.title.trim(),why:p.why,tasks:p.tasks.filter(function(t){return t.selected})}}).filter(function(p){return p.tasks.length});
-    saveAiChecklist(a,selected,planId,values()).then(function(result){busy(false);closeOverlay(true);if(onSaved)onSaved();render();toast(result.added?result.added+" tasks added to this video":"Those tasks are already in the checklist")}).catch(function(e){busy(false);ui.error.textContent=e.message||msgFor(e);ui.error.hidden=false});
+    validate();if(add.disabled)return;ui.error.hidden=true;busy(true);function selection(tasks){return tasks.filter(function(t){return t.selected}).map(function(t){return Object.assign({},t,{children:selection(t.children||[])})})}var selected=drafts.map(function(p){return {title:p.title.trim(),why:p.why,tasks:selection(p.tasks)}}).filter(function(p){return p.tasks.length});
+    saveAiChecklist(a,selected,planId,values(),targetId).then(function(result){busy(false);closeOverlay(true);if(onSaved)onSaved();render();toast(result.added?result.added+" tasks added to this video":"Those tasks are already in the checklist")}).catch(function(e){busy(false);ui.error.textContent=e.message||msgFor(e);ui.error.hidden=false});
   };
   var initialBrief=JSON.stringify(values());drawSources();validate();overlay(ui.node,function(){return !!plan||sourcesTouched||JSON.stringify(values())!==initialBrief||(directionTouched&&direction.value.trim()!==(persistedDirection||defaultDirection).trim())},true);
   aiRequest("GET").then(function(data){ready=data.configured;defaultDirection=data.directionPrompt||"";if(!directionTouched&&!persistedDirection)direction.value=defaultDirection;status.textContent=ready?"Gemini is ready · From scene direction to distribution":"AI setup needed: add GEMINI_API_KEY in Vercel → Settings → Environment Variables (Production), then redeploy. Your key stays on the server.";if(!ready){var link=el("a",null,"Open Vercel AI setup");link.href="https://vercel.com/ashutosh-mishra-5049s-projects/contentcalendar/settings/environment-variables";link.target="_blank";link.rel="noopener noreferrer";status.appendChild(document.createTextNode(" "));status.appendChild(link)}validate()}).catch(function(e){status.textContent=e.message;validate()});
@@ -2440,7 +2379,7 @@ function openCampaign(c,afterCreate){
   if(!writable())return;
   var isNew=!c;
   var d={name:c?c.name:"",goal:c?(c.goal||""):"",startDate:c?c.startDate:TODAY,
-    endDate:c?c.endDate:addDays(TODAY,14),owner:c?(c.owner||""):"",status:c?c.status:"Planning"};
+    endDate:c?c.endDate:addDays(TODAY,14),owner:c?(c.owner||""):((S.me&&S.me.id)||""),status:c?c.status:"Planning"};
   var initial=JSON.stringify(d);
   var m=el("div","modal");m.setAttribute("role","dialog");m.setAttribute("aria-label",isNew?"New campaign":"Edit campaign");
   var head=el("div","p-head");head.appendChild(el("h2",null,isNew?"New campaign":"Edit campaign"));
@@ -2720,7 +2659,7 @@ document.addEventListener("click",function(e){if(!e.target.closest(".account"))c
     if(!emailAllowed(u.email)){S.me=null;render();showGate("denied",u.email);return;}
     $("gate").hidden=true;
     document.querySelector(".topbar").inert=false;$("workspace").inert=false;
-    S.me={id:u.uid,name:u.displayName||u.email,email:u.email};S.aiPlanning={};
+    S.me={id:u.uid,name:u.displayName||u.email,email:u.email};S.aiPlanning={};S.workScope="my";
     S.canWrite=true;
     U=makeUser();
     db.collection("users").doc(u.uid).set({

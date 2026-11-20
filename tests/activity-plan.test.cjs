@@ -34,6 +34,16 @@ try{
   const context=brief({...request,brief:{...request.brief,private:'secret'},existing:[{title:'Done',script:'secret'}]});assert.equal(JSON.stringify(context).includes('secret'),false);
   assert.throws(()=>validatePlan({...plan,phases:[{...plan.phases[0],tasks:[{...plan.phases[0].tasks[0],dueDate:'2026-12-25'}]}]},context));
   assert.equal(validatePlan(plan,{...context,existing:[{title:'Confirm story consent'}]}).phases.length,0);assert.equal(validatePlan({...plan,phases:[]},context).phases.length,0);
+  const nestedPlan=structuredClone(plan);nestedPlan.phases[0].tasks[0].children=[{title:'Store participant approval',description:'Keep the consent record',dueDate:'',sourceId:'',reason:'This is the approval acceptance criterion.'}];
+  assert.equal(validatePlan(nestedPlan,brief(request)).phases[0].tasks[0].children.length,1);
+  const targetContext=brief({...request,target:{id:'target',title:'Prepare interview',depth:0,due:'2026-11-27'}});
+  assert.equal(targetContext.target.remainingLevels,2);assert.equal(systemInstruction(targetContext).includes('BREAK DOWN ONLY THE SELECTED TASK'),true);
+  assert.throws(()=>validatePlan(nestedPlan,targetContext));
+  const flatContext=brief({...request,target:{id:'target',title:'Prepare interview',depth:1}});
+  assert.equal(validatePlan(plan,flatContext).flat,true);assert.equal(validatePlan(plan,flatContext).targetId,'target');
+  assert.throws(()=>brief({...request,target:{id:'target',title:'Prepare interview',depth:2}}));
+  assert.throws(()=>brief({...request,target:{id:'target',title:'Prepare interview',depth:0,done:true}}));
+  assert.throws(()=>validatePlan({...plan,phases:[{...plan.phases[0],tasks:[{...plan.phases[0].tasks[0],title:'Prepare interview'}]}]},flatContext));
   const workContext=brief({...request,activity:{...request.activity,description:'Use the existing interview only',script:'DO NOT SHARE'},existing:[{title:'Interview cut',phase:'Production',description:'Only use approved interview quotes.',done:true}],references:[{id:'work:previous-video',title:'Nursing Story previous',type:'Reel',platforms:['Instagram'],steps:[{title:'Review subtitles',phase:'Publishing',description:'Creative team checks Hindi spelling before upload.'}]}],sops:[{id:'sop:story',name:'Story SOP',conditions:[{platform:'Instagram',format:'Reel',angle:'Motivational'}],steps:[{title:'Review consent',description:'Store the participant approval before publication.'}]}]});
   assert.equal(workContext.existing[0].description,'Only use approved interview quotes.');assert.equal(workContext.references[0].steps[0].description,'Creative team checks Hindi spelling before upload.');assert.equal(workContext.sops[0].steps[0].title,'Review consent');assert.equal(JSON.stringify(workContext).includes('DO NOT SHARE'),false);
   const grounded={...plan,phases:[{title:'Publishing',why:'Follow saved process',tasks:[{title:'Proofread Hindi captions',description:'Creative team checks spelling before upload.',dueDate:'',sourceId:'work:previous-video',reason:'The previous reel has a creative-team subtitle review; this checklist has none.'}]}]};

@@ -22,37 +22,55 @@ function brief(body) {
   if(!str(a.title)||!str(b.goal)||!str(b.audience)) throw fail(400,'Add a video title, goal and audience.');
   if(!date(a.dueDate)) throw fail(400,'The video needs a valid due date.');
   if(a.status==='Published')throw fail(400,'This video is already published. Reopen it before adding production tasks.');
+  let target=null;
+  if(body.target){const t=body.target;if(!str(t.id,150)||!str(t.title,180)||!Number.isInteger(t.depth)||t.depth<0||t.depth>1)throw fail(400,'This task has no room for more nested subtasks. Use its parent instead.');
+    if(t.done===true&&!t.hasChildren)throw fail(400,'Reopen this completed task before breaking it down.');
+    target={id:str(t.id,150),title:str(t.title,180),description:str(t.description,2200),due:date(t.due)?t.due:'',depth:t.depth,remainingLevels:2-t.depth,hasChildren:t.hasChildren===true};
+  }
   const today=date(body.today)?body.today:new Date().toISOString().slice(0,10);
   return {
     activity:{title:str(a.title,160),type:formats.includes(a.type)?a.type:'Other',angle:str(a.angle,100),platforms:(Array.isArray(a.platforms)?a.platforms:[]).filter(p=>platforms.includes(p)).slice(0,7),dueDate:a.dueDate,description:str(a.description,1000),campaign:{name:str(a.campaign?.name,160),goal:str(a.campaign?.goal,600)}},
     brief:{goal:str(b.goal,1000),audience:str(b.audience,600),constraints:str(b.constraints,1000)},
     directionPrompt:str(body.directionPrompt,6000)||DEFAULT_DIRECTION,
+    target,
     today,latestDate:addDays(a.dueDate<today?today:a.dueDate,7),
     existing:cleanSteps(body.existing,100,12000),
     references:(Array.isArray(body.references)?body.references:[]).slice(0,3).filter(r=>r&&/^work:[\w-]{1,150}$/.test(r.id||'')).map(r=>({id:r.id,title:str(r.title,160),type:formats.includes(r.type)?r.type:'Other',platforms:(Array.isArray(r.platforms)?r.platforms:[]).filter(p=>platforms.includes(p)).slice(0,7),angle:str(r.angle,100),description:str(r.description,600),status:str(r.status,40),steps:cleanSteps(r.steps,30,4500)})).filter(r=>r.steps.length),
     sops:(Array.isArray(body.sops)?body.sops:[]).slice(0,3).filter(s=>s&&/^sop:[\w-]{1,150}$/.test(s.id||'')).map(s=>({id:s.id,name:str(s.name,100),conditions:(Array.isArray(s.conditions)?s.conditions:[s]).slice(0,20).map(c=>({platform:str(c.platform,40),format:str(c.format,50),angle:str(c.angle,100)})),steps:cleanSteps(s.steps,40,6000)})).filter(s=>s.steps.length)
   };
 }
+const taskProperties={title:{type:'string'},description:{type:'string'},dueDate:{type:'string'},sourceId:{type:'string'},reason:{type:'string'}};
+const leafSchema={type:'object',properties:taskProperties,required:['title','description','dueDate','sourceId','reason'],additionalProperties:false};
 const schema={type:'object',properties:{
   summary:{type:'string'},assumptions:{type:'array',items:{type:'string'},maxItems:5},
   phases:{type:'array',items:{type:'object',properties:{
-    title:{type:'string'},why:{type:'string'},tasks:{type:'array',items:{type:'object',properties:{title:{type:'string'},description:{type:'string'},dueDate:{type:'string'},sourceId:{type:'string'},reason:{type:'string'}},required:['title','description','dueDate','sourceId','reason'],additionalProperties:false}}
+    title:{type:'string'},why:{type:'string'},tasks:{type:'array',items:{type:'object',properties:{...taskProperties,children:{type:'array',items:leafSchema}},required:['title','description','dueDate','sourceId','reason','children'],additionalProperties:false}}
   },required:['title','why','tasks'],additionalProperties:false}}
 },required:['summary','assumptions','phases'],additionalProperties:false};
 function validatePlan(raw,context) {
   if(!raw||!Array.isArray(raw.phases)||raw.phases.length>6||!str(raw.summary,1200)) throw fail(502,'Gemini returned an incomplete checklist. Please try again.');
-  const seen=new Set(context.existing.map(n=>n.title.trim().toLowerCase())),phaseNames=new Set(),sources=[...(context.existing.length||context.activity.description?[{id:'current',title:context.activity.title,kind:'current',stepCount:context.existing.length}]:[]),...(context.references||[]).map(r=>({id:r.id,title:r.title,kind:'activity',stepCount:r.steps.length})),...(context.sops||[]).map(s=>({id:s.id,title:s.name,kind:'sop',stepCount:s.steps.length}))],sourceIds=new Set(sources.map(s=>s.id));
-  let total=0;const phases=raw.phases.map(p=>{
+  const seen=new Set(context.existing.map(n=>n.title.trim().toLowerCase())),phaseNames=new Set(),sources=[...(context.existing.length||context.activity.description||context.target?[{id:'current',title:context.target?context.target.title:context.activity.title,kind:'current',stepCount:context.existing.length}]:[]),...(context.references||[]).map(r=>({id:r.id,title:r.title,kind:'activity',stepCount:r.steps.length})),...(context.sops||[]).map(s=>({id:s.id,title:s.name,kind:'sop',stepCount:s.steps.length}))],sourceIds=new Set(sources.map(s=>s.id));
+  const remainingLevels=context.target?context.target.remainingLevels:3;let total=0;
+  function parseTask(t,depth,ancestors=[]){
+    if(depth>remainingLevels)throw fail(502,'The suggested hierarchy is too deep for this task. Please try again.');
+    if(!t||!str(t.title,180)||!str(t.description)||typeof t.dueDate!=='string'||(t.dueDate&&(!date(t.dueDate)||t.dueDate<context.today||t.dueDate>context.latestDate)))throw fail(502,'Gemini returned invalid tasks or dates. Please try again.');
+    if(typeof t.description!=='string'||t.description.length>2200||++total>20)throw fail(502,'Gemini returned too much detail for one checklist. Please try again.');
+    if(typeof t.sourceId!=='string'||(t.sourceId&&!sourceIds.has(t.sourceId))||!str(t.reason,500))throw fail(502,'Gemini could not explain a suggestion using the supplied work. Please try again.');
+    if(t.children!==undefined&&!Array.isArray(t.children))throw fail(502,'Gemini returned an invalid task hierarchy. Please try again.');
+    const key=str(t.title,180).toLowerCase();if(ancestors.includes(key))throw fail(502,'A suggested subtask repeats its parent. Please try again.');
+    const existed=seen.has(key);seen.add(key);
+    const children=(t.children||[]).map(c=>parseTask(c,depth+1,ancestors.concat(key))).filter(Boolean);
+    if(existed&&!children.length)return null;
+    if((t.children||[]).length&&!children.length)return null;
+    return {title:str(t.title,180),description:str(t.description,2200),dueDate:t.dueDate,basis:{sourceIds:t.sourceId?[t.sourceId]:[],reason:str(t.reason,500)},children};
+  }
+  const phases=raw.phases.map(p=>{
     if(!p||!str(p.title,100)||!str(p.why)||!Array.isArray(p.tasks)||p.tasks.length>10||!p.tasks.length)throw fail(502,'Gemini returned an invalid phase. Please try again.');
     const name=str(p.title,100).toLowerCase();if(phaseNames.has(name))throw fail(502,'Gemini returned repeated phases. Please try again.');phaseNames.add(name);
-    return {title:str(p.title,100),why:str(p.why,600),tasks:p.tasks.map(t=>{
-      if(!t||!str(t.title,180)||!str(t.description)||typeof t.dueDate!=='string'||(t.dueDate&&(!date(t.dueDate)||t.dueDate<context.today||t.dueDate>context.latestDate)))throw fail(502,'Gemini returned invalid tasks or dates. Please try again.');
-      if(typeof t.description!=='string'||t.description.length>2200||++total>20)throw fail(502,'Gemini returned too much detail for one checklist. Please try again.');
-      if(typeof t.sourceId!=='string'||(t.sourceId&&!sourceIds.has(t.sourceId))||!str(t.reason,500))throw fail(502,'Gemini could not explain a suggestion using the supplied work. Please try again.');
-      return {title:str(t.title,180),description:str(t.description,2200),dueDate:t.dueDate,basis:{sourceIds:t.sourceId?[t.sourceId]:[],reason:str(t.reason,500)}};
-    }).filter(t=>{const key=t.title.toLowerCase();if(seen.has(key))return false;seen.add(key);return true})};
+    if(context.target&&name===context.target.title.toLowerCase()&&remainingLevels!==1)throw fail(502,'A suggested phase repeats the selected task. Please try again.');
+    return {title:str(p.title,100),why:str(p.why,600),tasks:p.tasks.map(t=>parseTask(t,remainingLevels===1?1:2,context.target?[context.target.title.toLowerCase()]:[])).filter(Boolean)};
   }).filter(p=>p.tasks.length);
-  return {summary:str(raw.summary,1200),assumptions:(Array.isArray(raw.assumptions)?raw.assumptions:[]).map(s=>str(s,400)).filter(Boolean).slice(0,5),phases,sources};
+  return {summary:str(raw.summary,1200),assumptions:(Array.isArray(raw.assumptions)?raw.assumptions:[]).map(s=>str(s,400)).filter(Boolean).slice(0,5),phases,sources,targetId:context.target?context.target.id:null,flat:remainingLevels===1};
 }
 function outputText(data) {
   return (data.candidates?.[0]?.content?.parts||[]).filter(p=>!p.thought&&typeof p.text==='string').map(p=>p.text).join('');

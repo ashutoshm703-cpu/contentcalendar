@@ -13,12 +13,24 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
 
 ## Workspace experience
 
-- **Next 7 days** opens first. Select a day to focus its activities; choose
+- **My work** is the default visibility, with **Team work** available in every
+  view. My work includes subtasks assigned to you inside another owner's activity.
+  Blank subtask owners inherit the nearest parent owner. New activities default
+  to their creator; existing unassigned work remains available in Team work.
+- **Next 7 days** opens first. Select a day to focus its work; choose
   **Show all 7 days** to return to the week ahead. Week and Month use an agenda
   on narrow screens.
-- Today and Next 7 days show unfinished subtasks dated within the selected range.
-  **Show full checklist** reveals all steps, including completed items, other
-  dates and undated steps. The summary explains how many have no deadline.
+- Today and the same selected date in Next 7 days share the same work list.
+  Activities appear on their own deadline; individual subtasks appear on their
+  effective deadline, with their activity/group shown as context. Blank deadlines
+  dynamically inherit the nearest parent's deadline. Explicit dates stay independent.
+  Overdue work and completed work are separate collapsed sections. **Show full
+  checklist** reveals the scoped hierarchy, including other dates and completed steps.
+- Task and subtask checkboxes work in all five views and save to the same campaign
+  checklist. Completing a group confirms before marking its descendants complete.
+  Completing an activity marks it Published, with a warning if its checklist is
+  unfinished; subtasks keep their own progress. Every checkbox supports reopening.
+  Completion uses a transaction against the latest saved activity and reports failures.
 - The account avatar is at the far right of the workspace header. Open it for
   account details and an explicit **Sign out** action.
 - Create a campaign with its name and dates, then add the first activity in the
@@ -40,8 +52,8 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
 - Saving a task/subtask deadline closes its popup and keeps the page position,
   expanded groups and parent editor position. Live data updates preserve scroll
   and return focus to the matching control after the list redraws.
-- Every displayed subtask shows its deadline, or **Set deadline** when no date
-  has been assigned. Select the deadline to edit it; overdue deadlines are
+- Every displayed subtask shows its explicit or inherited deadline, or **Set
+  deadline** when no parent date exists. Select the deadline to edit it; overdue deadlines are
   highlighted until the item is complete.
 - **SOP library** is the single place to create and reuse checklists. Every SOP
   has a unique name, one shared checklist and up to 20 alternative conditions.
@@ -116,6 +128,10 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   reused, duplicate task titles skipped, and completed/custom work preserved.
   Drafting changes no data. AI never creates campaign-level activities. Published
   activities must be reopened before adding production tasks.
+- AI drafts support phase → task → subtask breakdowns. A subtask's **⋯ → Break
+  down with AI** adds a focused breakdown inside that existing task, respecting
+  the remaining nesting depth. Nested selections preserve their parent, and
+  optional new ideas remain unchecked. Blank AI dates inherit their parent deadline.
 - **How AI should think** exposes the editable system prompt. Its recommended
   direction covers scene timing/shots/dialogue, production, Instagram/YouTube
   packaging, distribution and measurement. The goal is prefilled from the video;
