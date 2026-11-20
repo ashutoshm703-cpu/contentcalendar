@@ -370,6 +370,7 @@ function filterBar(){
 /* ─── render: chip ──────────────────────────────────────── */
 function chip(a){
   var b=el("button","chip"+(a.status==="Published"?" done":"")+(isLate(a)?" late":""));
+  b.setAttribute("data-focus-key","activity:"+a.id);
   b.style.setProperty("--c",campColor(a.campaignId));
   var c=campById(a.campaignId);
   b.title=a.title+(c?" · "+c.name:"")+(a.type?" · "+a.type:"")+(a.angle?" / "+a.angle:"")
@@ -482,6 +483,13 @@ function weekStrip(from,to){
   }
   return box;
 }
+function focusChecklist(host,a,from,to){
+  var total=subTotal(a);if(!total)return false;
+  var key="focus-subs-"+a.id,open=!!S.expanded[key],due=dueLeaves(a,from,to).length,undated=leaves(a.subtasks).filter(function(n){return !n.due&&!n.done}).length,bar=el("div","focus-checklist-bar");
+  var detail=el("span","hint",(due?due+" unfinished "+(due===1?"subtask":"subtasks")+" due "+(from===to?"on this day":"in this range"):"No unfinished subtasks dated "+(from===to?"for this day":"in this range"))+(undated?" · "+undated+" without a deadline":""));bar.appendChild(detail);
+  var toggle=el("button","text-button",open?"Hide full checklist":"Show full checklist ("+total+")");toggle.setAttribute("aria-expanded",String(open));toggle.setAttribute("aria-label",(open?"Hide":"Show")+" full checklist for "+a.title);toggle.onclick=function(){S.expanded[key]=!open;render()};bar.appendChild(toggle);host.appendChild(bar);
+  if(open){var full=el("div","focus-full-checklist");full.appendChild(el("p","hint","Full checklist · Includes completed steps and steps with other dates or no deadline."));full.appendChild(subtaskTree(a));host.appendChild(full)}return open;
+}
 
 /* Today and Next 7 days: everything in play, campaign by campaign,
    with the range's subtasks under the task they belong to */
@@ -523,7 +531,7 @@ function renderFocus(box,from,to,showDates){
         fr.appendChild(dl);fr.appendChild(chip(it.a));
         bd.appendChild(fr);
       }else bd.appendChild(chip(it.a));
-      if(!it.subs.length)return;
+      if(focusChecklist(bd,it.a,from,to)||!it.subs.length)return;
       var sl=el("div","subs nest");
       it.subs.forEach(function(x){
         var r=el("div","sub-row");
@@ -565,6 +573,7 @@ function overdueBlock(){
     r.appendChild(el("span","d",fmtShort(a.dueDate)));
     r.appendChild(chip(a));
     box.appendChild(r);
+    focusChecklist(box,a,TODAY,TODAY);
   });
   return box;
 }
@@ -691,7 +700,7 @@ function renderCampaigns(main){
           });
         };
         r.appendChild(mk);
-        var rm=el("button","row-main");
+        var rm=el("button","row-main");rm.setAttribute("data-focus-key","activity:"+a.id);
         rm.appendChild(el("span","d",fmtShort(a.dueDate)));
         rm.appendChild(el("span","n",a.title));
         if(a.type||a.angle)
@@ -749,7 +758,7 @@ function subtaskDeadline(a,s,onSaved){
   var late=!!s.due&&s.due<TODAY&&!nodeDone(s);
   var date=s.due?(s.due.slice(0,4)===TODAY.slice(0,4)?fmtShort(s.due):fmtLong(s.due)):"";
   var deadline=el(writable()?"button":"span","sub-deadline"+(late?" overdue":"")+(!s.due?" unset":""),s.due?date:"Set deadline");
-  deadline.title=s.due?"Deadline: "+fmtLong(s.due)+(late?" · overdue":""):"No deadline set";
+  deadline.title=s.due?"Deadline: "+fmtLong(s.due)+(late?" · overdue":""):"No deadline set";deadline.setAttribute("data-focus-key","deadline:"+a.id+":"+s.id);
   if(writable()){
     deadline.setAttribute("aria-label",(s.due?"Change deadline for ":"Set deadline for ")+(s.title||"Untitled subtask")+(s.due?": "+fmtLong(s.due):""));
     deadline.onclick=function(){openSubtask(a,s,onSaved,true)};
@@ -1666,7 +1675,13 @@ function clearDayExpand(){
     if(ch!=="c"&&ch!=="a"&&ch!=="n")delete S.expanded[k];
   });
 }
+function viewportPosition(){return {x:window.scrollX||0,y:window.scrollY||0}}
+function restoreViewport(position){if(position&&window.scrollTo)window.scrollTo({left:position.x,top:position.y,behavior:"instant"})}
+function focusWithoutScroll(node){if(node&&node.isConnected)node.focus({preventScroll:true})}
+function returnFocusKey(node){return node&&node.getAttribute?node.getAttribute("data-focus-key")||node.getAttribute("data-pfocus")||"":""}
+function findReturnFocus(scope,key){if(!key)return null;return Array.from(scope.querySelectorAll("[data-focus-key],[data-pfocus]")).find(function(node){return returnFocusKey(node)===key})||null}
 function render(){
+  var position=viewportPosition(),requestedFocus=!!S.focusAdd;
   renderViews();renderHead();
   var who=$("who");
   if(S.me){
@@ -1674,9 +1689,10 @@ function render(){
     who.textContent=initials(S.me.name);
     who.title="Your account";who.setAttribute("aria-label","Your account: "+S.me.name);
   }else who.hidden=true;
-  renderMain();
+  renderMain();if(!requestedFocus)restoreViewport(position);
 }
 function renderMain(){
+  var position=viewportPosition(),requestedFocus=!!S.focusAdd,returnKey=returnFocusKey(document.activeElement);
   var summary=document.querySelector("#head .psub");if(summary)summary.textContent=headSub();
   var main=$("main");clear(main);
   if(S.err){
@@ -1698,6 +1714,7 @@ function renderMain(){
   }
   paintNames();
   labelIconControls(main);
+  if(!requestedFocus){if(!overlayState)focusWithoutScroll(findReturnFocus(main,returnKey));restoreViewport(position)}
 }
 
 /* resolve owner ids to names without re-rendering */
@@ -1748,14 +1765,16 @@ function closeOverlay(force){
   if(overlayState)(closed.parentNodes||[]).forEach(function(n){$("overlay").appendChild(n)});
   document.body.style.overflow=overlayState?"hidden":"";
   document.querySelector(".topbar").inert=!!overlayState;$("workspace").inert=!!overlayState;
-  if(previous&&previous.isConnected)previous.focus();
-  else if(overlayState){var focus=overlayState.node.querySelector("input,button");if(focus)focus.focus()}
-  else if($("new-act")&&!$("new-act").hidden)$("new-act").focus();
+  var scope=overlayState?overlayState.node:$("workspace"),replacement=findReturnFocus(scope,closed&&closed.returnKey);
+  focusWithoutScroll(previous&&previous.isConnected?previous:replacement||(overlayState?overlayState.node.querySelector("input,button"):$("main")));
+  if(overlayState&&closed.parentScroll){var body=overlayState.node.querySelector(".p-body");if(body){body.scrollTop=closed.parentScroll.top;body.scrollLeft=closed.parentScroll.left}}
+  if(closed)restoreViewport(closed.viewport);
 }
 function overlay(node,dirty,preserveParent){
   clear($("toasts"));
   var o=$("overlay"),parent=preserveParent?overlayState:null;
-  overlayState={node:node,dirty:dirty,previous:document.activeElement,parent:parent,parentNodes:parent?Array.from(o.childNodes):null};
+  var parentBody=parent&&parent.node.querySelector(".p-body");
+  overlayState={node:node,dirty:dirty,previous:document.activeElement,returnKey:returnFocusKey(document.activeElement),viewport:viewportPosition(),parentScroll:parentBody?{top:parentBody.scrollTop,left:parentBody.scrollLeft}:null,parent:parent,parentNodes:parent?Array.from(o.childNodes):null};
   clear(o);
   var sc=el("div","scrim");sc.onclick=closeOverlay;
   o.appendChild(sc);o.appendChild(node);
@@ -1768,7 +1787,7 @@ function overlay(node,dirty,preserveParent){
     var ff=node.querySelectorAll("input,select,textarea,.pill,.chk");
     for(var i=0;i<ff.length;i++)ff[i].disabled=true;
   }
-  var first=node.querySelector("[autofocus]")||node.querySelector("input,select,textarea");if(first)setTimeout(function(){first.focus()},120);
+  var first=node.querySelector("[autofocus]")||node.querySelector("input,select,textarea"),opened=overlayState;if(first)setTimeout(function(){if(overlayState===opened)focusWithoutScroll(first)},120);
 }
 document.addEventListener("keydown",function(e){
   if(e.key==="Escape"){if(!$("account-menu").hidden){closeAccount();$("who").focus()}else closeOverlay();return}
@@ -1857,6 +1876,7 @@ function ownerPicker(current,onPick){
 /* Subtask details are saved together; the parent activity draft stays intact. */
 function subtaskEditButton(a,s,onSaved){
   var edit=el("button","sub-edit");edit.title="Edit subtask";
+  edit.setAttribute("data-focus-key","edit-subtask:"+a.id+":"+s.id);
   var pencil=document.createElementNS("http://www.w3.org/2000/svg","svg");
   pencil.setAttribute("viewBox","0 0 24 24");pencil.setAttribute("width","16");pencil.setAttribute("height","16");
   pencil.setAttribute("fill","none");pencil.setAttribute("stroke","currentColor");pencil.setAttribute("stroke-width","1.75");
@@ -2125,7 +2145,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
         var kd=dropdown(SUBKINDS.map(function(k){return[k,k]}),s.kind||"","Type…");
         kd.className="ps-kind";kd.setAttribute("aria-label","Type");
         kd.onchange=function(){patchSub(s.id,{kind:kd.value})};
-        var dd=input("date",s.due||"");dd.className="ps-date";
+        var dd=input("date",s.due||"");dd.className="ps-date";dd.setAttribute("data-focus-key","inline-deadline:"+a.id+":"+s.id);
         dd.title="Due date for this item";
         dd.onchange=function(){patchSub(s.id,{due:dd.value})};
         var op=ownerPicker(s.owner,function(id){patchSub(s.id,{owner:id})});
@@ -2146,6 +2166,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
       });
     };
     drawSubs=function(focusKey){
+      var scrollTop=body.scrollTop,scrollLeft=body.scrollLeft,oldFocus=document.activeElement,key=returnFocusKey(oldFocus);
       clear(sbox);
       psNodes(a.subtasks||[],0);
       var ai=el("input");ai.type="text";ai.className="sub-add";
@@ -2170,7 +2191,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
       if(focusKey){
         var f=sbox.querySelector('[data-pfocus="'+focusKey+'"]');
         if(f)f.focus();
-      }
+      }else{focusWithoutScroll(findReturnFocus(sbox,key));body.scrollTop=scrollTop;body.scrollLeft=scrollLeft}
       paintNames();
       labelIconControls(sbox);
     };
@@ -2317,23 +2338,37 @@ function saveAiChecklist(a,phases,planId,brief){
     if(result.activity!==a)tx.update(ref,{subtasks:result.activity.subtasks,aiBrief:result.activity.aiBrief||brief,appliedAiPlans:result.activity.appliedAiPlans||[]});return result;
   })})}).then(function(result){Object.assign(a,result.activity);S.activities=S.activities.map(function(current){return current.id===a.id?result.activity:current});render();return result});
 }
+function saveAiDirection(direction,audience){
+  if(!S.me||!S.me.id)return Promise.reject(new Error("Sign in again to save your AI direction."));
+  var settings={directionPrompt:direction.trim(),audience:audience.trim()};
+  if(!settings.directionPrompt||settings.directionPrompt.length>6000)return Promise.reject(new Error("Keep the AI system prompt between 1 and 6,000 characters."));
+  return db.doc("users/"+S.me.id).set({aiPlanning:settings},{merge:true}).then(function(){S.aiPlanning=settings;return settings});
+}
 function openActivityPlanner(a,onSaved){
   if(!writable())return;
   var ui=actionDialog("Plan video tasks with AI","Suggest phases and missing tasks for “"+a.title+"”. Your existing checklist stays intact; you choose what to add.");ui.node.classList.add("ai-planner");
-  var saved=a.aiBrief||{},brief=el("div","ai-brief"),results=el("div","ai-results"),status=el("p","hint","Checking AI availability…"),ready=false,working=false,plan=null,planId=sid(),drafts=[];
+  var saved=a.aiBrief||{},settings=S.aiPlanning||{},brief=el("div","ai-brief"),results=el("div","ai-results"),status=el("p","hint","Checking AI availability…"),ready=false,working=false,plan=null,planId=sid(),drafts=[],defaultDirection="",directionTouched=false;
   results.hidden=true;ui.body.appendChild(status);ui.body.appendChild(brief);ui.body.appendChild(results);
   var context=el("p","ai-video-context",[a.type].concat(a.platforms||[]).concat([a.angle,fmtLong(a.dueDate)]).filter(Boolean).join(" · "));brief.appendChild(context);
-  var goal=el("textarea");goal.rows=2;goal.value=saved.goal||"";goal.maxLength=1000;goal.placeholder="e.g. Tell a nursing success story that motivates aspirants to keep preparing";
-  var audience=input("text",saved.audience||"Nursing exam aspirants","Who is watching this video?");audience.maxLength=600;
+  brief.appendChild(el("p","ai-role-summary","Creative director · Instagram & YouTube specialist · Growth strategist"));
+  var goal=el("textarea");goal.rows=2;goal.value=saved.goal||"Make “"+a.title+"” useful and engaging for nursing exam aspirants, with a clear next action.";goal.maxLength=1000;goal.placeholder="e.g. Tell a nursing success story that motivates aspirants to keep preparing";
+  var audience=input("text",saved.audience||settings.audience||"Nursing exam aspirants","Who is watching this video?");audience.maxLength=600;
   brief.appendChild(field("What should this video achieve? *",goal));brief.appendChild(field("Who is it for? *",audience));
   var extra=disclosure("Constraints & context","Capacity, tone, resources or anything to avoid"),constraints=el("textarea");constraints.rows=3;constraints.maxLength=1000;constraints.value=saved.constraints||"";constraints.placeholder="e.g. A 45-second video using an interview we already recorded; no new shoot";extra.body.appendChild(field("Constraints",constraints));brief.appendChild(extra.node);
+  var directionSection=disclosure("How AI should think","System prompt · Director, platform expert & growth strategist"),direction=el("textarea","ai-direction-prompt"),directionActions=el("div","ai-direction-actions"),saveDirection=el("button","btn btn-o","Save as my default"),resetDirection=el("button","text-button","Use recommended prompt"),copyDirection=el("button","text-button","Copy prompt"),directionStatus=el("p","hint"),persistedDirection=settings.directionPrompt||"";
+  direction.rows=12;direction.maxLength=6000;direction.value=persistedDirection;direction.placeholder="Loading the recommended system prompt…";directionSection.body.appendChild(field("AI system prompt",direction,"Used for every draft. Save it as your default to reuse it across all videos on your account."));
+  [saveDirection,resetDirection,copyDirection].forEach(function(button){button.type="button";directionActions.appendChild(button)});directionSection.body.appendChild(directionActions);directionStatus.setAttribute("role","status");directionStatus.textContent=persistedDirection?"Using your saved direction. Change it here for this draft, or save a new default.":"The recommended direction applies automatically. Save changes once to reuse them for future videos.";directionSection.body.appendChild(directionStatus);brief.appendChild(directionSection.node);
+  direction.oninput=function(){directionTouched=true;directionStatus.textContent="Changed for this draft. Save as my default to reuse across videos.";validate()};
+  resetDirection.onclick=function(){direction.value=defaultDirection;directionTouched=true;directionStatus.textContent="Recommended prompt restored for this draft. Save as my default to keep it.";validate()};
+  copyDirection.onclick=function(){if(!navigator.clipboard){directionSection.node.open=true;direction.focus();direction.select();directionStatus.textContent="Select and copy the prompt above.";return}navigator.clipboard.writeText(direction.value).then(function(){directionStatus.textContent="System prompt copied."}).catch(function(){directionSection.node.open=true;direction.focus();direction.select();directionStatus.textContent="Select and copy the prompt above."})};
+  saveDirection.onclick=function(){validate();if(saveDirection.disabled)return;busy(true);directionStatus.textContent="Saving your default…";saveAiDirection(direction.value,audience.value).then(function(){persistedDirection=direction.value;directionStatus.textContent="Saved for your account. Future videos will use this direction and audience."}).catch(function(e){directionStatus.textContent=e.code?msgFor(e):e.message}).finally(function(){busy(false)})};
   var matches=sopMatches(a).filter(function(r){return (a.appliedSopRules||[]).indexOf(r.id)<0});if(matches.length)brief.appendChild(el("p","hint","Matching SOP available: "+matches.map(sopDisplayName).join(", ")+". You can apply it from the checklist first, then ask AI for any missing steps."));
-  var sharing=el("p","hint ai-sharing","Sends this video’s title, platform, format, category, deadline, your brief and existing checklist titles/completion to Google Gemini. Scripts, owner details and task descriptions are excluded. Google’s free tier may use submitted content to improve its products.");brief.appendChild(sharing);
+  var sharing=el("p","hint ai-sharing","Sends this video’s title, platform, format, category, deadline, your brief, AI direction and existing checklist titles/completion to Google Gemini. Scripts, owner details and task descriptions are excluded. Google’s free tier may use submitted content to improve its products.");brief.appendChild(sharing);
   var pricing=el("a",null,"Google data-use and pricing terms");pricing.href="https://ai.google.dev/gemini-api/docs/pricing";pricing.target="_blank";pricing.rel="noopener noreferrer";sharing.appendChild(document.createTextNode(" "));sharing.appendChild(pricing);
   var generate=el("button","btn btn-p sp","Suggest phases & tasks"),add=el("button","btn btn-p sp","Add selected tasks"),back=el("button","btn btn-o","Edit brief");add.hidden=true;back.hidden=true;ui.foot.appendChild(back);ui.foot.appendChild(generate);ui.foot.appendChild(add);
   function values(){return {goal:goal.value.trim(),audience:audience.value.trim(),constraints:constraints.value.trim()}}
   function chosen(){return drafts.reduce(function(count,p){return count+p.tasks.filter(function(t){return t.selected}).length},0)}
-  function validate(){generate.disabled=working||!ready||!values().goal||!values().audience;var count=chosen();add.textContent="Add "+count+" "+(count===1?"task":"tasks");add.disabled=working||!count||drafts.some(function(p){return p.tasks.some(function(t){return t.selected&&(!p.title.trim()||!t.title.trim()||(t.dueDate&&(t.dueDate<TODAY||t.dueDate>addDays(a.dueDate>TODAY?a.dueDate:TODAY,7))))})});}
+  function validate(){var directionValid=!!direction.value.trim()&&direction.value.length<=6000;generate.disabled=working||!ready||!values().goal||!values().audience||!directionValid;saveDirection.disabled=working||!directionValid||!audience.value.trim();resetDirection.disabled=working||!defaultDirection;copyDirection.disabled=working||!direction.value.trim();var count=chosen();add.textContent="Add "+count+" "+(count===1?"task":"tasks");add.disabled=working||!count||drafts.some(function(p){return p.tasks.some(function(t){return t.selected&&(!p.title.trim()||!t.title.trim()||!t.description.trim()||t.description.length>2200||(t.dueDate&&(t.dueDate<TODAY||t.dueDate>addDays(a.dueDate>TODAY?a.dueDate:TODAY,7))))})});}
   [goal,audience,constraints].forEach(function(n){n.oninput=validate});
   back.onclick=function(){results.hidden=true;brief.hidden=false;generate.hidden=false;back.hidden=true;add.hidden=true;goal.focus()};
   function busy(value){working=value;overlayState.busy=value;ui.close.disabled=value;ui.cancel.disabled=value;ui.body.querySelectorAll("input,textarea,select,button").forEach(function(n){n.disabled=value});back.disabled=value;validate()}
@@ -2344,22 +2379,23 @@ function openActivityPlanner(a,onSaved){
     var taskIndex=0;drafts.forEach(function(phase,i){var section=el("section","ai-phase"),title=input("text",phase.title);title.maxLength=100;title.className="ai-phase-title";title.setAttribute("aria-label","Phase name "+(i+1));title.oninput=function(){phase.title=title.value;validate()};section.appendChild(title);section.appendChild(el("p","hint",phase.why));
       phase.tasks.forEach(function(task){var index=++taskIndex,card=el("div","ai-step"),check=input("checkbox","");check.checked=task.selected;check.setAttribute("aria-label","Include "+task.title);check.onchange=function(){task.selected=check.checked;validate()};card.appendChild(check);
         var content=el("div","ai-step-content"),name=input("text",task.title);name.maxLength=180;name.setAttribute("aria-label","Suggested task title "+index);name.oninput=function(){task.title=name.value;validate()};content.appendChild(name);
-        content.appendChild(el("p","ai-step-why",task.description));var due=input("date",task.dueDate);due.min=TODAY;due.max=addDays(a.dueDate>TODAY?a.dueDate:TODAY,7);due.setAttribute("aria-label","Due date for task "+index);content.appendChild(field("Task deadline (optional)",due));due.oninput=function(){task.dueDate=due.value;validate()};card.appendChild(content);section.appendChild(card);
+        var instructions=el("details","ai-task-instructions"),instructionsSummary=el("summary",null,"Direction & draft copy"),description=el("textarea");description.rows=6;description.maxLength=2200;description.value=task.description;description.setAttribute("aria-label","Instructions for task "+index);description.oninput=function(){task.description=description.value;validate()};instructions.appendChild(instructionsSummary);instructions.appendChild(description);content.appendChild(instructions);
+        var due=input("date",task.dueDate);due.min=TODAY;due.max=addDays(a.dueDate>TODAY?a.dueDate:TODAY,7);due.setAttribute("aria-label","Due date for task "+index);content.appendChild(field("Task deadline (optional)",due));due.oninput=function(){task.dueDate=due.value;validate()};card.appendChild(content);section.appendChild(card);
       });results.appendChild(section);
     });results.hidden=false;brief.hidden=true;generate.hidden=true;back.hidden=false;add.hidden=false;validate();
   }
   generate.onclick=function(){
     validate();if(generate.disabled)return;ui.error.hidden=true;busy(true);generate.textContent="Planning video tasks…";status.textContent="Reviewing the video and its existing checklist…";
     var current=S.activities.find(function(n){return n.id===a.id});if(!current){busy(false);ui.error.textContent="This activity no longer exists.";ui.error.hidden=false;return}
-    var request={activity:{title:current.title,type:current.type,platforms:current.platforms,angle:current.angle,dueDate:current.dueDate,status:current.status},brief:values(),today:TODAY,existing:aiChecklistContext(current.subtasks),sops:sopMatches(current).map(function(r){return {name:r.name,conditions:sopConditions(r)}})};
+    var request={activity:{title:current.title,type:current.type,platforms:current.platforms,angle:current.angle,dueDate:current.dueDate,status:current.status},brief:values(),directionPrompt:direction.value.trim(),today:TODAY,existing:aiChecklistContext(current.subtasks),sops:sopMatches(current).map(function(r){return {name:r.name,conditions:sopConditions(r)}})};
     aiRequest("POST",request).then(function(data){plan=data.plan;drafts=plan.phases.map(function(p){return {title:p.title,why:p.why,tasks:p.tasks.map(function(t){return Object.assign({selected:true},t)})}});planId=sid();status.textContent="Draft from "+data.model+" · For this video only";drawPlan()}).catch(function(e){status.textContent="Your checklist is unchanged.";ui.error.textContent=e.message||"AI could not suggest tasks. Please try again.";ui.error.hidden=false}).finally(function(){busy(false);generate.textContent="Suggest phases & tasks"});
   };
   add.onclick=function(){
     validate();if(add.disabled)return;ui.error.hidden=true;busy(true);var selected=drafts.map(function(p){return {title:p.title.trim(),why:p.why,tasks:p.tasks.filter(function(t){return t.selected})}}).filter(function(p){return p.tasks.length});
     saveAiChecklist(a,selected,planId,values()).then(function(result){busy(false);closeOverlay(true);if(onSaved)onSaved();render();toast(result.added?result.added+" tasks added to this video":"Those tasks are already in the checklist")}).catch(function(e){busy(false);ui.error.textContent=e.message||msgFor(e);ui.error.hidden=false});
   };
-  var initialBrief=JSON.stringify(values());validate();overlay(ui.node,function(){return !!plan||JSON.stringify(values())!==initialBrief},true);
-  aiRequest("GET").then(function(data){ready=data.configured;status.textContent=ready?"Gemini is ready · Adds tasks to this activity only":"AI setup needed: add GEMINI_API_KEY in Vercel → Settings → Environment Variables (Production), then redeploy. Your key stays on the server.";if(!ready){var link=el("a",null,"Open Vercel AI setup");link.href="https://vercel.com/ashutosh-mishra-5049s-projects/contentcalendar/settings/environment-variables";link.target="_blank";link.rel="noopener noreferrer";status.appendChild(document.createTextNode(" "));status.appendChild(link)}validate()}).catch(function(e){status.textContent=e.message;validate()});
+  var initialBrief=JSON.stringify(values());validate();overlay(ui.node,function(){return !!plan||JSON.stringify(values())!==initialBrief||(directionTouched&&direction.value.trim()!==(persistedDirection||defaultDirection).trim())},true);
+  aiRequest("GET").then(function(data){ready=data.configured;defaultDirection=data.directionPrompt||"";if(!directionTouched&&!persistedDirection)direction.value=defaultDirection;status.textContent=ready?"Gemini is ready · From scene direction to distribution":"AI setup needed: add GEMINI_API_KEY in Vercel → Settings → Environment Variables (Production), then redeploy. Your key stays on the server.";if(!ready){var link=el("a",null,"Open Vercel AI setup");link.href="https://vercel.com/ashutosh-mishra-5049s-projects/contentcalendar/settings/environment-variables";link.target="_blank";link.rel="noopener noreferrer";status.appendChild(document.createTextNode(" "));status.appendChild(link)}validate()}).catch(function(e){status.textContent=e.message;validate()});
 }
 function openCampaign(c,afterCreate){
   if(!writable())return;
@@ -2578,6 +2614,7 @@ function startData(){
   }));
   /* the team roster, so owners resolve to real names */
   subs.push(db.collection("users").onSnapshot({includeMetadataChanges:true},function(snap){
+    var mine=S.me&&snap.docs.find(function(d){return d.id===S.me.id});S.aiPlanning=mine?(mine.data().aiPlanning||{}):{};
     S.team=snap.docs.map(function(d){
       var v=d.data()||{};
       return {id:d.id,name:v.name||v.email||"Teammate"};
@@ -2638,13 +2675,13 @@ document.addEventListener("click",function(e){if(!e.target.closest(".account"))c
   auth.onAuthStateChanged(function(u){
     if(!u){
       subs.forEach(function(f){try{f()}catch(e){}});subs=[];
-      S.me=null;S.campaigns=[];S.activities=[];S.team=[];S.templates=[];S.templateError="";S.templatesLoading=true;S.sopRules=[];S.sopReady=false;S.loading=true;
+      S.me=null;S.aiPlanning={};S.campaigns=[];S.activities=[];S.team=[];S.templates=[];S.templateError="";S.templatesLoading=true;S.sopRules=[];S.sopReady=false;S.loading=true;
       render();showGate("signin");return;
     }
     if(!emailAllowed(u.email)){S.me=null;render();showGate("denied",u.email);return;}
     $("gate").hidden=true;
     document.querySelector(".topbar").inert=false;$("workspace").inert=false;
-    S.me={id:u.uid,name:u.displayName||u.email,email:u.email};
+    S.me={id:u.uid,name:u.displayName||u.email,email:u.email};S.aiPlanning={};
     S.canWrite=true;
     U=makeUser();
     db.collection("users").doc(u.uid).set({

@@ -1,5 +1,6 @@
 const assert=require('node:assert/strict');
 const handler=require('../api/activity-plan.js');
+const {DEFAULT_DIRECTION,systemInstruction}=require('../lib/ai-direction.cjs');
 const {brief,validatePlan,outputText,recent}=handler._test;
 const request={activity:{title:'Nursing Story 1',type:'Reel',platforms:['Instagram'],angle:'Motivational',dueDate:'2026-11-28',status:'Not started'},today:'2026-11-20',brief:{goal:'Motivate aspirants through a nursing story',audience:'Working nursing aspirants'},existing:[],sops:[]};
 const plan={summary:'Prepare the story, produce the reel, and check the response.',assumptions:['Confirm participant consent.'],phases:[{title:'Pre-production',why:'Prepare a clear, accurate story.',tasks:[{title:'Confirm story consent',description:'Get approval to use the interview.',dueDate:'2026-11-24'}]}]};
@@ -14,9 +15,15 @@ try{
   global.fetch=async()=>reply(200,{users:[{localId:'u1',email:'owner@outside.in',emailVerified:true}]});assert.equal((await invoke()).status,403);
   global.fetch=async()=>reply(200,{users:[{localId:'u1',email:'owner@nprep.in',emailVerified:false}]});assert.equal((await invoke()).status,403);
   global.fetch=async(url,options)=>{calls.push({url,options});return url.includes('identitytoolkit')?reply(200,{users:[{localId:'u1',email:'owner@nprep.in',emailVerified:true}]}):reply(200,{candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(plan)}]}}]})};
-  delete process.env.GEMINI_API_KEY;assert.equal((await invoke({method:'GET'})).payload.configured,false);assert.equal((await invoke()).status,503);
+  delete process.env.GEMINI_API_KEY;const config=await invoke({method:'GET'});assert.equal(config.payload.configured,false);assert.equal(config.payload.directionPrompt,DEFAULT_DIRECTION);assert.equal((await invoke()).status,503);
   process.env.GEMINI_API_KEY='SERVER-ONLY-TEST-KEY';calls=[];const success=await invoke();assert.equal(success.status,200);assert.equal(success.payload.plan.phases.length,1);assert.equal(JSON.stringify(success).includes('SERVER-ONLY'),false);
   assert.equal(calls[0].url.includes('accounts:lookup'),true);const upstream=calls[1];assert.equal(upstream.options.headers['x-goog-api-key'],'SERVER-ONLY-TEST-KEY');assert.equal(JSON.parse(upstream.options.body).generationConfig.responseMimeType,'application/json');
+  const sent=JSON.parse(upstream.options.body);assert.equal(sent.systemInstruction.parts[0].text.includes(DEFAULT_DIRECTION),true);
+  const creative=brief({...request,directionPrompt:'Direct each scene with Hindi dialogue and a retention test.'});assert.equal(systemInstruction(creative).includes('Direct each scene with Hindi dialogue'),true);assert.equal(systemInstruction(creative).includes('Return only JSON'),true);
+  assert.equal(brief(request).directionPrompt,DEFAULT_DIRECTION);assert.equal(brief({...request,directionPrompt:'  '}).directionPrompt,DEFAULT_DIRECTION);
+  assert.throws(()=>brief({...request,directionPrompt:'x'.repeat(6001)}));assert.throws(()=>brief({...request,directionPrompt:{role:'override'}}));
+  const detailed='Scene direction and draft copy. '.repeat(36);const detailedPlan={...plan,phases:[{...plan.phases[0],tasks:[{...plan.phases[0].tasks[0],description:detailed}]}]};assert.equal(validatePlan(detailedPlan,brief(request)).phases[0].tasks[0].description,detailed.trim());
+  assert.throws(()=>validatePlan({...plan,phases:[{...plan.phases[0],tasks:[{...plan.phases[0].tasks[0],description:'x'.repeat(2201)}]}]},brief(request)));
   assert.equal((await invoke()).status,429);recent.clear();
   assert.equal((await invoke({body:{...request,brief:{goal:''}}})).status,400);
   assert.equal((await invoke({body:{...request,activity:{...request.activity,dueDate:'2026-99-99'}}})).status,400);

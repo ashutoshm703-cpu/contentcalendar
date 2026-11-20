@@ -16,6 +16,9 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
 - **Next 7 days** opens first. Select a day to focus its activities; choose
   **Show all 7 days** to return to the week ahead. Week and Month use an agenda
   on narrow screens.
+- Today and Next 7 days show unfinished subtasks dated within the selected range.
+  **Show full checklist** reveals all steps, including completed items, other
+  dates and undated steps. The summary explains how many have no deadline.
 - The account avatar is at the far right of the workspace header. Open it for
   account details and an explicit **Sign out** action.
 - Create a campaign with its name and dates, then add the first activity in the
@@ -34,6 +37,9 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   due date, platform and type. **Save subtask** stores the details in Firestore.
   Nested subtasks and groups support descriptions too. Opening subtask details
   from an activity preserves the unfinished activity form underneath.
+- Saving a task/subtask deadline closes its popup and keeps the page position,
+  expanded groups and parent editor position. Live data updates preserve scroll
+  and return focus to the matching control after the list redraws.
 - Every displayed subtask shows its deadline, or **Set deadline** when no date
   has been assigned. Select the deadline to edit it; overdue deadlines are
   highlighted until the item is complete.
@@ -110,6 +116,13 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   reused, duplicate task titles skipped, and completed/custom work preserved.
   Drafting changes no data. AI never creates campaign-level activities. Published
   activities must be reopened before adding production tasks.
+- **How AI should think** exposes the editable system prompt. Its recommended
+  direction covers scene timing/shots/dialogue, production, Instagram/YouTube
+  packaging, distribution and measurement. The goal is prefilled from the video;
+  **Save as my default** reuses your direction and audience across videos on your
+  account. **Copy prompt** exports it; **Use recommended prompt** restores the
+  recommended text for the current draft. **Direction & draft copy** under each
+  suggested task lets you edit scene instructions and copy before adding.
 - Form labels, dialog focus, view-tab keyboard navigation and visible focus
   indicators support keyboard use. Optional fields are identified in the forms.
 
@@ -227,7 +240,8 @@ Firebase Auth, requires a verified @nprep.in account, and calls Gemini server
 side with structured JSON output through `generateContent`. It shares the
 selected video's title/platform/format/category/deadline, entered brief, up to 150
 existing checklist titles/completion/deadlines and up to 20 matching SOP
-names/conditions. Scripts, owners and task descriptions are excluded.
+names/conditions, plus the selected AI direction. Scripts, owners and existing
+task descriptions are excluded.
 The app explains Google's free-tier data-use terms before generation. Free-tier
 availability and quotas depend on Google; a billing-enabled project can incur
 charges. The integration does not enable billing or switch to another model.
@@ -239,6 +253,14 @@ phases and invalid task dates are rejected. Adding selected tasks reads the late
 activity in a transaction and retains an applied draft ID so retries cannot reset
 work. Activity `aiBrief` stores planning context; `appliedAiPlans` prevents replay;
 accepted groups/tasks record `aiPlanId`. Campaign data is unchanged.
+
+The recommended prompt is defined in `lib/ai-direction.cjs` and served by the
+authenticated configuration endpoint. Custom direction is limited to 6,000
+characters and cannot override the server's output/date/evidence requirements.
+Saved account defaults live at `users/{uid}.aiPlanning` under the existing rule
+that only the user can write their own profile. Task instructions preserve up to
+2,200 characters, with a maximum of 20 suggested tasks per draft. The model has
+no live trends or analytics access; outputs remain reviewable suggestions.
 
 Provider failures distinguish invalid keys, access restrictions, unavailable
 models, exhausted quotas and rejected request settings. Server logs contain only
