@@ -42,10 +42,42 @@ service cloud.firestore {
       allow read, write: if nprep();
     }
 
+    // Assignable people exist independently of authenticated accounts.
+    match /teamMembers/{memberId} {
+      function validMember() {
+        let m = request.resource.data;
+        return m.keys().hasOnly(['name', 'email', 'role', 'nameKey', 'emailKey', 'createdBy', 'createdAt', 'updatedAt', 'revision'])
+          && m.name is string && m.name.size() > 0 && m.name.size() <= 100
+          && m.email is string && m.email.size() <= 200
+          && m.role is string && m.role.size() <= 80
+          && m.nameKey is string && m.emailKey is string
+          && m.createdBy is string && m.createdAt is string && m.updatedAt is string && m.revision is int && m.revision > 0
+          && getAfter(/databases/$(database)/documents/teamMemberNameClaims/$(m.nameKey)).data.memberId == memberId
+          && getAfter(/databases/$(database)/documents/teamMemberNameClaims/$(m.nameKey)).data.name == m.name
+          && (m.email == '' || (
+            getAfter(/databases/$(database)/documents/teamMemberEmailClaims/$(m.emailKey)).data.memberId == memberId
+            && getAfter(/databases/$(database)/documents/teamMemberEmailClaims/$(m.emailKey)).data.email == m.email
+          ));
+      }
+      allow read: if nprep();
+      allow create: if nprep() && validMember() && request.resource.data.createdBy == request.auth.uid;
+      allow update: if nprep() && validMember()
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
+    match /teamMemberNameClaims/{nameKey} {
+      allow read, write: if nprep();
+    }
+    match /teamMemberEmailClaims/{emailKey} {
+      allow read, write: if nprep();
+    }
+
     // The roster, so owner names resolve. You may only write your own row.
     match /users/{uid} {
       allow read: if nprep();
-      allow write: if nprep() && request.auth.uid == uid;
+      allow create, update: if nprep() && request.auth.uid == uid
+        && request.resource.data.email.lower() == request.auth.token.email.lower();
+      allow delete: if nprep() && request.auth.uid == uid;
     }
 
     // Nothing else is reachable.

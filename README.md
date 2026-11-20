@@ -17,6 +17,19 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   view. My work includes subtasks assigned to you inside another owner's activity.
   Blank subtask owners inherit the nearest parent owner. New activities default
   to their creator; existing unassigned work remains available in Team work.
+- Use the arrows to **collapse or expand campaigns, tasks and subtask groups**
+  in calendar views. **Collapse all** and **Expand all** apply to the hierarchy.
+  Opening a parent preserves each child's previous state. Choices are remembered
+  per signed-in account on the current browser, survive live updates and view
+  changes, and keep completion checkboxes separate from expansion controls.
+- **Team members** in the top bar (**Team** on mobile) opens the shared directory.
+  Add a name with an optional role and email, then assign them from any Owner
+  field before they sign in. Owner pickers also offer **+ Add team member** and
+  select the newly created person without discarding the parent form. Names and
+  emails are reserved transactionally to prevent duplicate entries. Editing a
+  person preserves their assignment ID. An allowed account signing in with the
+  same email resolves earlier assignments to My work without rewriting tasks.
+  Adding a person does not send an invitation or grant access to the app.
 - **Next 7 days** opens first. Select a day to focus its work; choose
   **Show all 7 days** to return to the week ahead. Week and Month use an agenda
   on narrow screens.
@@ -164,6 +177,7 @@ styles.css           the whole visual system
 app.js               the app
 firebase-config.js   your Firebase web config  ← the one file you fill in
 firestore.rules      paste into the Firebase console
+firebase.json        Firebase CLI rules deployment configuration
 ```
 
 ## Setting it up

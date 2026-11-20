@@ -5,7 +5,7 @@ const context={document:{addEventListener(){},getElementById(){return {}}},windo
 vm.createContext(context);
 vm.runInContext(source.slice(0,source.indexOf('(function boot(){')).replace(/^render\(\);$/m,'')+`
 render=function(){};toast=function(){};
-globalThis.api={S,effectiveWork,workItems,workByDay,visible,scopedNodes,scheduledNodes,groupedWork,saveCompletion,appendAiChecklist,aiWorkRequest,setDB(value){db=value}};
+globalThis.api={S,effectiveWork,workItems,workByDay,visible,scopedNodes,scheduledNodes,groupedWork,saveCompletion,appendAiChecklist,aiWorkRequest,buildTeamDirectory,rebuildTeamDirectory,storeTeamMember,ownerIdentity,foldAllWork,restoreWorkFolds,setDB(value){db=value}};
 })();`,context);
 const {api}=context,{S}=api;
 assert.equal(S.workScope,'my');S.me={id:'me'};
@@ -54,4 +54,17 @@ console.log('PASS: My work default; descendant ownership; nearest-parent deadlin
   await api.saveCompletion(activity,null,false);assert.equal(stored.status,'Ready');
   fail=true;await assert.rejects(api.saveCompletion(activity,'root-inherit',true));assert.equal(stored.subtasks[1].done,undefined);assert.equal(S.completing['video:root-inherit'],undefined);
   console.log('PASS: transactional leaf/group/task completion; independent publication; concurrent sibling preservation; failed-save recovery');
+  S.members=[];S.userRoster=[{id:'me',name:'My account',email:'me@nprep.in'}];api.rebuildTeamDirectory();
+  const records=new Map();let transactionQueue=Promise.resolve(),sequence=0,failMember=false;
+  api.setDB({doc(id){return {path:id,id:id.split('/')[1]}},collection(name){return {doc(id){return {path:name+'/'+(id||'member'+(++sequence)),id:id||'member'+sequence}}}},runTransaction(work){const result=transactionQueue.then(async()=>{const writes=[];const value=await work({async get(ref){const row=records.get(ref.path);return {exists:!!row,data(){return structuredClone(row)}}},set(ref,data){writes.push([ref.path,structuredClone(data)])},delete(ref){writes.push([ref.path,null])}});if(failMember){failMember=false;throw new Error('Save failed')}writes.forEach(([key,value])=>value?records.set(key,value):records.delete(key));return value});transactionQueue=result.catch(()=>{});return result}});
+  let member=await api.storeTeamMember({name:'  Riya   Sharma ',role:'Video editor',email:'RIYA@NPREP.IN'});assert.equal(member.name,'Riya Sharma');assert.equal(member.email,'riya@nprep.in');assert.equal(S.team.find(p=>p.id===member.id).connected,false);
+  assert.equal(records.get('teamMemberNameClaims/'+member.nameKey).memberId,member.id);
+  assert.throws(()=>api.storeTeamMember({name:'riya sharma',email:''}));assert.throws(()=>api.storeTeamMember({name:'Another name',email:'riya@nprep.in'}));
+  failMember=true;await assert.rejects(api.storeTeamMember({name:'Failed member'}));assert.equal(S.members.length,1);
+  const races=await Promise.allSettled([api.storeTeamMember({name:'New editor'}),api.storeTeamMember({name:'NEW EDITOR'})]);assert.equal(races.filter(r=>r.status==='fulfilled').length,1);
+  const renamed=await api.storeTeamMember({name:'Riya S',role:'Producer',email:member.email},member);assert.equal(renamed.id,member.id);assert.equal(records.has('teamMemberNameClaims/'+member.nameKey),false);assert.equal(renamed.revision,2);await assert.rejects(api.storeTeamMember({name:'Stale edit'},member));
+  const tree={...activity,owner:renamed.id,subtasks:[{id:'assigned-before-login',title:'Publish the video',owner:renamed.id,children:[]}]};S.activities=[tree];S.userRoster.push({id:'riya-account',name:'Riya account',email:'riya@nprep.in'});api.rebuildTeamDirectory();
+  assert.equal(api.ownerIdentity(renamed.id),'riya-account');assert.equal(S.team.filter(p=>p.email==='riya@nprep.in').length,1);assert.equal(S.profiles[renamed.id].name,'Riya S');S.me={id:'riya-account'};S.workScope='my';assert.equal(api.workItems().length,2);assert.equal(tree.owner,renamed.id);
+  api.foldAllWork(true);assert.equal(S.workCollapsed['task:video'],true);api.foldAllWork(false);assert.equal(S.workCollapsed['task:video'],false);
+  console.log('PASS: manual team members; name/email normalization; atomic duplicate claims; concurrent creation; failed-save recovery; stable IDs on edit; stale-edit protection; matching-account linking and My work without assignment rewrites; bulk folds');
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -111,7 +111,7 @@ var DOW=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 var S={campaigns:[],activities:[],view:"calendar",calView:"next7",workScope:"my",completing:{},anchor:"",y:0,m:0,
   filters:{campaign:"",platform:"",format:"",owner:"",status:""},
   loading:true,stale:false,err:null,canWrite:null,open:null,expanded:{},focusAdd:null,lastAdd:{},
-  placeFor:null,showFilters:false,me:null,team:[],
+  placeFor:null,showFilters:false,me:null,team:[],members:[],userRoster:[],ownerAliases:{},membersReady:false,teamError:"",workCollapsed:{},
   profiles:{},dayMax:3,query:"",focusDay:"",templates:[],templateError:"",templatesLoading:true,
   sopRules:[],sopReady:false};
 var db=null,U=null,phone=false;
@@ -170,14 +170,14 @@ function visible(){
   });
 }
 function effectiveWork(a){
-  var out=[];function walk(nodes,parent,path,depth){(nodes||[]).forEach(function(n){var row={a:a,n:n,id:n.id,title:n.title,due:n.due||parent.due||"",owner:n.owner||parent.owner||"",inheritedDue:!n.due,parentDue:parent.due||"",source:n.due?n.title:parent.source,done:nodeDone(n),path:path.join(" → "),depth:depth};out.push(row);walk(kids(n),{due:row.due,owner:row.owner,source:row.source},path.concat(n.title),depth+1)})}
+  var out=[];function walk(nodes,parent,path,depth){(nodes||[]).forEach(function(n){var row={a:a,n:n,id:n.id,title:n.title,due:n.due||parent.due||"",owner:ownerIdentity(n.owner||parent.owner||""),inheritedDue:!n.due,parentDue:parent.due||"",source:n.due?n.title:parent.source,done:nodeDone(n),path:path.join(" → "),depth:depth};out.push(row);walk(kids(n),{due:row.due,owner:row.owner,source:row.source},path.concat(n.title),depth+1)})}
   walk(a.subtasks,{due:a.dueDate||"",owner:a.owner||"",source:a.title},[],0);return out;
 }
 function workOwner(){return S.workScope==="my"?(S.me&&S.me.id)||"__signed_out__":S.filters.owner||""}
-function ownerInScope(owner){var expected=workOwner();return !expected||owner===expected}
+function ownerInScope(owner){var expected=workOwner();return !expected||ownerIdentity(owner)===ownerIdentity(expected)}
 function activityInWorkScope(a){return ownerInScope(a.owner||"")||effectiveWork(a).some(function(row){return ownerInScope(row.owner)})}
 function workItems(list){var out=[];(list||visible()).forEach(function(a){
-  if(ownerInScope(a.owner||""))out.push({a:a,n:null,id:"activity:"+a.id,title:a.title,due:a.dueDate||"",owner:a.owner||"",done:a.status==="Published",path:"",depth:-1,inheritedDue:false});
+  if(ownerInScope(a.owner||""))out.push({a:a,n:null,id:"activity:"+a.id,title:a.title,due:a.dueDate||"",owner:ownerIdentity(a.owner||""),done:a.status==="Published",path:"",depth:-1,inheritedDue:false});
   effectiveWork(a).forEach(function(row){if(!kids(row.n).length&&ownerInScope(row.owner))out.push(row)});
 });return out}
 function workByDay(list){var map={};workItems(list).forEach(function(row){if(row.due)(map[row.due]=map[row.due]||[]).push(row)});Object.keys(map).forEach(function(day){map[day].sort(function(a,b){return Number(a.done)-Number(b.done)||a.title.localeCompare(b.title)})});return map}
@@ -192,7 +192,7 @@ function matchesSearch(a){
 function campaignMatches(c){
   var f=S.filters,q=S.query.trim().toLowerCase();
   if(f.campaignStatus&&c.status!==f.campaignStatus)return false;
-    if(!S.activities.some(function(a){return a.campaignId===c.id&&activityInWorkScope(a)})&&!(S.workScope==="team"&&!f.owner)&&!(S.workScope==="my"&&S.me&&c.owner===S.me.id))return false;
+    if(!S.activities.some(function(a){return a.campaignId===c.id&&activityInWorkScope(a)})&&!(S.workScope==="team"&&!f.owner)&&!(S.workScope==="my"&&S.me&&ownerIdentity(c.owner)===S.me.id))return false;
   return !q||[c.name,c.goal].join(" ").toLowerCase().indexOf(q)>=0||S.activities.some(function(a){return a.campaignId===c.id&&matchesSearch(a)});
 }
 function resetFilterValues(){Object.keys(S.filters).forEach(function(k){S.filters[k]=""})}
@@ -207,7 +207,7 @@ function byDay(list){
 }
 function ownerIds(){
   var seen={},out=[];
-  S.activities.concat(S.campaigns).forEach(function(r){if(r.owner&&!seen[r.owner]){seen[r.owner]=1;out.push(r.owner)}});
+  S.activities.concat(S.campaigns).forEach(function(r){var id=ownerIdentity(r.owner);if(id&&!seen[id]){seen[id]=1;out.push(id)}});
   S.activities.forEach(function(a){effectiveWork(a).forEach(function(row){if(row.owner&&!seen[row.owner]){seen[row.owner]=1;out.push(row.owner)}})});
   return out;
 }
@@ -302,17 +302,7 @@ function renderHead(){
     };
     ctl.appendChild(td);
   }
-  if(!cal&&S.campaigns.length>2){
-    var ea=el("button","ghost",anyExpanded()?"Collapse all":"Expand all");
-    ea.onclick=function(){
-      var on=!anyExpanded();
-      S.campaigns.forEach(function(c){
-        if(on)S.expanded["c"+c.id]=true;else delete S.expanded["c"+c.id];
-      });
-      render();
-    };
-    ctl.appendChild(ea);
-  }
+  if(S.campaigns.length&&!S.loading){var folds=el("div","work-fold-tools");[["Collapse all",true],["Expand all",false]].forEach(function(option){var button=el("button","text-button",option[0]);button.onclick=function(){foldAllWork(option[1])};folds.appendChild(button)});ctl.appendChild(folds)}
   var late=workItems().filter(function(row){return row.due&&row.due<TODAY&&!row.done}).length;
   if(late&&!(cal&&S.calView==="today")){
     var ob=el("button","alert-pill",late+" overdue");
@@ -415,25 +405,44 @@ function groupedWork(rows){
   var groups=[];rows.forEach(function(row){var group=groups.find(function(g){return g.a.id===row.a.id});if(!group){group={a:row.a,rows:[]};groups.push(group)}group.rows.push(row)});
   return groups.sort(function(x,y){return (x.a.dueTime||"99").localeCompare(y.a.dueTime||"99")||x.a.title.localeCompare(y.a.title)});
 }
+function restoreWorkFolds(){try{var saved=JSON.parse(localStorage.getItem("nprep:work-folds:"+S.me.id)||"{}");S.workCollapsed=saved&&typeof saved==="object"&&!Array.isArray(saved)?saved:{}}catch(e){S.workCollapsed={}}}
+function rememberWorkFolds(){try{if(S.me)localStorage.setItem("nprep:work-folds:"+S.me.id,JSON.stringify(S.workCollapsed))}catch(e){}}
+function workFoldButton(kind,id,title,body){
+  var key=kind+":"+id,button=el("button","work-disclosure"),panelId="work-fold-"+(++fieldCount);body.id=panelId;button.type="button";button.setAttribute("data-work-fold",key);button.setAttribute("aria-controls",panelId);button.setAttribute("data-focus-key","fold:"+key);
+  function draw(b){var closed=!!S.workCollapsed[key],target=$(b.getAttribute("aria-controls"));if(target)target.hidden=closed;b.textContent=closed?"▸":"▾";b.setAttribute("aria-expanded",String(!closed));b.setAttribute("aria-label",(closed?"Expand ":"Collapse ")+kind+": "+title)}
+  body.hidden=!!S.workCollapsed[key];button.textContent=body.hidden?"▸":"▾";button.setAttribute("aria-expanded",String(!body.hidden));button.setAttribute("aria-label",(body.hidden?"Expand ":"Collapse ")+kind+": "+title);
+  button.onclick=function(){S.workCollapsed[key]=!S.workCollapsed[key];rememberWorkFolds();document.querySelectorAll("[data-work-fold]").forEach(function(peer){if(peer.getAttribute("data-work-fold")===key)draw(peer)})};return button;
+}
+function foldAllWork(closed){
+  S.campaigns.forEach(function(c){S.workCollapsed["campaign:"+c.id]=closed;S.expanded["c"+c.id]=!closed});S.activities.forEach(function(a){S.workCollapsed["task:"+a.id]=closed;S.expanded["a"+a.id]=!closed;effectiveWork(a).forEach(function(row){if(kids(row.n).length){S.workCollapsed["group:"+row.id]=closed;S.expanded["n"+row.id]=!closed}})});rememberWorkFolds();render();
+}
+function renderWorkCampaigns(host,rows,options){
+  options=options||{};S.campaigns.forEach(function(c){var entries=rows.filter(function(row){return row.a.campaignId===c.id});if(!entries.length)return;
+    var section=el("section",options.focus?"cgroup":"work-campaign-block"),head=el("div","work-campaign-head"),body=el("div",options.focus?"cgroup-b":"work-campaign-body"),toggle=workFoldButton("campaign",c.id,c.name,body),heading=el("button",options.focus?"cgroup-h":"work-campaign-heading-button"),title=el("span","work-campaign-heading");section.setAttribute("data-work-campaign-section",c.id);section.style.setProperty("--c",c.colour);title.appendChild(el("small",null,"Campaign"));title.appendChild(el("span",options.focus?"cgroup-n":"work-campaign-name",c.name));heading.appendChild(title);heading.appendChild(el("span","cgroup-c",entries.length+(options.completed?" complete":" items")));heading.setAttribute("aria-label","Toggle campaign: "+c.name);heading.onclick=function(){toggle.click()};head.appendChild(toggle);head.appendChild(heading);section.appendChild(head);
+    groupedWork(entries).forEach(function(entry){body.appendChild(workGroup(entry,Object.assign({},options,{campaignHeading:true})))});section.appendChild(body);host.appendChild(section);
+  });
+}
 function workGroup(entry,options){
   options=options||{};var a=entry.a,rows=entry.rows,root=rows.find(function(row){return !row.n}),selected={},effective={},group=el("article","work-group"+(options.compact?" is-compact":"")+(options.focus?" focus-activity":""));
   var campaign=campById(a.campaignId);group.setAttribute("data-work-activity",a.id);group.setAttribute("data-work-campaign",a.campaignId||"");group.setAttribute("aria-label",(campaign?"Campaign: "+campaign.name+". ":"")+"Task: "+a.title);rows.forEach(function(row){if(row.n)selected[row.id]=row});effectiveWork(a).forEach(function(row){effective[row.id]=row});
-  var heading=el("div","work-group-head");
-  if(options.compact&&campaign)heading.appendChild(el("p","work-group-campaign","Campaign · "+campaign.name));
-  if(root)heading.appendChild(workCard(root));else{
+  var heading=el("div","work-group-head"),body=el("div","work-group-body"),headRow=el("div","work-group-heading-row");
+  if(options.compact&&campaign&&!options.campaignHeading)heading.appendChild(el("p","work-group-campaign","Campaign · "+campaign.name));
+  var hasChecklist=rows.some(function(row){return !!row.n})||(options.focus&&leaves(scopedNodes(a,a.subtasks)).length);if(hasChecklist)headRow.appendChild(workFoldButton("task",a.id,a.title,body));
+  if(root)headRow.appendChild(workCard(root));else{
     var context=el("button","work-parent-context"),title=el("span","work-parent-title",a.title),meta=el("span","work-parent-meta",a.status+" · "+(a.dueDate?"Video deadline "+fmtShort(a.dueDate):"No video deadline"));
-    context.setAttribute("aria-label","Open parent task: "+a.title);context.setAttribute("data-focus-key","activity:"+a.id);context.appendChild(title);context.appendChild(meta);context.onclick=function(){openActivity(a)};heading.appendChild(context);
+    context.setAttribute("aria-label","Open parent task: "+a.title);context.setAttribute("data-focus-key","activity:"+a.id);context.appendChild(title);context.appendChild(meta);context.onclick=function(){openActivity(a)};headRow.appendChild(context);
   }
-  group.appendChild(heading);
+  heading.appendChild(headRow);if(hasChecklist)heading.appendChild(el("p","work-group-step-count",rows.filter(function(row){return !!row.n}).length+" steps in this view"));group.appendChild(heading);
   function tree(nodes){var list=el("ul","work-children");nodes.forEach(function(n){var raw=nodeById(a.subtasks,n.id)||n,row=selected[n.id],branch=kids(n).length>0,item=el("li","work-tree-item"),line=el("div","work-tree-row"+(row?" work-card":" work-branch")+(nodeDone(raw)?" is-done":""));item.setAttribute("data-work-node",n.id);
     if(row)line.setAttribute("data-work-id",a.id+":"+n.id);
-    if(row||(!options.completed&&effective[n.id]&&ownerInScope(effective[n.id].owner)))line.appendChild(completionControl(a,raw));else line.appendChild(el("span","work-branch-marker","›"));
+    var children=branch?tree(kids(n)):null;if(branch)line.appendChild(workFoldButton("group",n.id,n.title,children));
+    if(row||(!options.completed&&effective[n.id]&&ownerInScope(effective[n.id].owner)))line.appendChild(completionControl(a,raw));
     var content=el("div","work-tree-content"),name=el("button","work-task-title",n.title);name.setAttribute("aria-label","Edit subtask: "+n.title);name.setAttribute("data-focus-key","work:"+a.id+":"+n.id);name.onclick=function(){openSubtask(a,raw)};content.appendChild(name);
     var meta=el("div","work-task-meta");if(branch){var counts=nodeCount(raw);meta.appendChild(el("span",null,counts[0]+" of "+counts[1]+" complete"))}else if(row){if(row.owner)meta.appendChild(uname(row.owner));if(row.due){var date=el("span","work-date",fmtShort(row.due));date.title=row.inheritedDue?"Deadline inherited from "+row.source:"Subtask deadline";meta.appendChild(date)}}
-    if(meta.childNodes.length)content.appendChild(meta);line.appendChild(content);item.appendChild(line);if(branch)item.appendChild(tree(kids(n)));list.appendChild(item);
+    if(meta.childNodes.length)content.appendChild(meta);line.appendChild(content);item.appendChild(line);if(branch)item.appendChild(children);list.appendChild(item);
   });return list}
-  var full=options.focus&&!!S.expanded["focus-subs-"+a.id];if(!full){var nodes=scheduledNodes(a,rows);if(nodes.length)group.appendChild(tree(nodes))}
-  if(options.focus)focusChecklist(group,a,options.from,options.to);return group;
+  var full=options.focus&&!!S.expanded["focus-subs-"+a.id];if(!full){var nodes=scheduledNodes(a,rows);if(nodes.length)body.appendChild(tree(nodes))}
+  if(options.focus)focusChecklist(body,a,options.from,options.to);group.appendChild(body);return group;
 }
 function chip(a){
   var b=el("button","chip"+(a.status==="Published"?" done":"")+(isLate(a)?" late":""));
@@ -479,7 +488,7 @@ function dayGrid(startISO,count,minH){
     var items=map[key]||[];if(!out)total+=items.length;
     if(!items.length&&!out)cell.classList.add("quiet");
     var groups=groupedWork(items),lim=(S.calView==="week"||S.expanded[key])?groups.length:S.dayMax;
-    groups.slice(0,lim).forEach(function(entry,n){var c=workGroup(entry,{compact:true});c.style.animationDelay=(n*40)+"ms";cell.appendChild(c)});
+    var selectedRows=[];groups.slice(0,lim).forEach(function(entry){selectedRows=selectedRows.concat(entry.rows)});renderWorkCampaigns(cell,selectedRows,{compact:true});
     if(groups.length>lim){
       var mb=el("button","more","+"+(groups.length-lim)+" more tasks");
       mb.onclick=function(k){return function(e){e.stopPropagation();S.expanded[k]=true;render()}}(key);
@@ -504,7 +513,7 @@ function agendaList(startISO,endISO,showEmpty){
     dt.appendChild(el("span",null,DOW[dowIdx(key)]));
     row.appendChild(dt);
     var ii=el("div","ag-items");
-    groupedWork(items).forEach(function(entry){ii.appendChild(workGroup(entry,{compact:true}))});
+    renderWorkCampaigns(ii,items,{compact:true});
     if(!items.length){
       var em=el("div","ag-empty");
       em.appendChild(el("span",null,"Nothing scheduled"));
@@ -553,16 +562,13 @@ function focusChecklist(host,a,from,to){
    with the range's subtasks under the task they belong to */
 function renderFocus(box,from,to,showDates){
   var rows=workItems().filter(function(row){return row.due&&row.due>=from&&row.due<=to}),pending=rows.filter(function(row){return !row.done}),completed=rows.filter(function(row){return row.done});
-  S.campaigns.forEach(function(c){var entries=pending.filter(function(row){return row.a.campaignId===c.id});if(!entries.length)return;
-    var section=el("div","cgroup");section.style.setProperty("--c",c.colour);var heading=el("button","cgroup-h");heading.appendChild(el("i","swatch"));var campaignTitle=el("span","work-campaign-heading");campaignTitle.appendChild(el("small",null,"Campaign"));campaignTitle.appendChild(el("span","cgroup-n",c.name));heading.appendChild(campaignTitle);heading.appendChild(el("span","cgroup-c",entries.length+" to do"));heading.onclick=function(){S.view="campaigns";S.expanded["c"+c.id]=true;render()};section.appendChild(heading);
-    var body=el("div","cgroup-b");groupedWork(entries).forEach(function(entry){body.appendChild(workGroup(entry,{focus:true,from:from,to:to}))});section.appendChild(body);box.appendChild(section);
-  });
-  if(completed.length){var done=el("details","work-completed"),label=el("summary",null,"Completed · "+completed.length);done.appendChild(label);groupedWork(completed).forEach(function(entry){done.appendChild(workGroup(entry,{completed:true,compact:true}))});box.appendChild(done)}
+  renderWorkCampaigns(box,pending,{focus:true,from:from,to:to});
+  if(completed.length){var done=el("details","work-completed"),label=el("summary",null,"Completed · "+completed.length);done.appendChild(label);renderWorkCampaigns(done,completed,{completed:true,compact:true});box.appendChild(done)}
   return rows.length;
 }
 function overdueBlock(){
   var rows=workItems().filter(function(row){return row.due&&row.due<TODAY&&!row.done}).sort(function(a,b){return a.due.localeCompare(b.due)});if(!rows.length)return null;
-  var box=el("details","od work-overdue"),summary=el("summary","od-h","Overdue · "+rows.length+" · Review separately");box.open=!!S.expanded.workOverdue;box.ontoggle=function(){S.expanded.workOverdue=box.open};box.appendChild(summary);box.appendChild(el("p","hint","Earlier deadlines stay here. Opening Today does not change their dates."));groupedWork(rows).forEach(function(entry){box.appendChild(workGroup(entry,{compact:true}))});return box;
+  var box=el("details","od work-overdue"),summary=el("summary","od-h","Overdue · "+rows.length+" · Review separately");box.open=!!S.expanded.workOverdue;box.ontoggle=function(){S.expanded.workOverdue=box.open};box.appendChild(summary);box.appendChild(el("p","hint","Earlier deadlines stay here. Opening Today does not change their dates."));renderWorkCampaigns(box,rows,{compact:true});return box;
 }
 
 function renderCalendar(main){
@@ -615,7 +621,7 @@ function renderCampaigns(main){
     var pub=acts.filter(function(a){return a.status==="Published"}).length;
     var late=acts.filter(isLate).length;
     var card=el("div","card");card.style.setProperty("--c",c.colour);card.style.animationDelay=(n*50)+"ms";
-    var open=!!S.expanded["c"+c.id];
+    var open=S.workCollapsed["campaign:"+c.id]===undefined?!!S.expanded["c"+c.id]:!S.workCollapsed["campaign:"+c.id];
     if(open)card.classList.add("open");
     var top=el("div","top");
     var tgl=el("button","c-top");
@@ -625,7 +631,7 @@ function renderCampaigns(main){
     tgl.appendChild(el("i","swatch"));
     var h=el("div","c-title");h.appendChild(el("h3",null,c.name));
     tgl.appendChild(h);
-    tgl.onclick=function(){S.expanded["c"+c.id]=!open;render()};
+    tgl.onclick=function(){S.expanded["c"+c.id]=!open;S.workCollapsed["campaign:"+c.id]=open;rememberWorkFolds();render()};
     top.appendChild(tgl);
     var ed=el("button","edit-campaign","Edit");ed.setAttribute("aria-label","Edit "+c.name);
     ed.onclick=function(){openCampaign(c)};
@@ -655,19 +661,19 @@ function renderCampaigns(main){
       tb.appendChild(el("span",null,open?"Hide activities"
         :"Show "+acts.length+(acts.length===1?" activity":" activities")));
       tb.appendChild(el("i","chev2",open?"▴":"▾"));
-      tb.onclick=function(){S.expanded["c"+c.id]=!open;render()};
+      tb.onclick=function(){S.expanded["c"+c.id]=!open;S.workCollapsed["campaign:"+c.id]=open;rememberWorkFolds();render()};
       card.appendChild(tb);
     }
     if(open&&acts.length){
       var list=el("div","c-acts");
       acts.slice().sort(function(x,y){return x.dueDate<y.dueDate?-1:(x.dueDate>y.dueDate?1:0)})
       .forEach(function(a){
-        var subs=a.subtasks||[],nSub=subTotal(a),pub=a.status==="Published";
+        var subs=a.subtasks||[],nSub=subTotal(a),pub=a.status==="Published",taskOpen=S.workCollapsed["task:"+a.id]===undefined?!!S.expanded["a"+a.id]:!S.workCollapsed["task:"+a.id];
         var aw=el("div","act-wrap"),r=el("div","row"+(isLate(a)?" late":"")+(pub?" done":""));
-        var st=el("button","sub-tgl",S.expanded["a"+a.id]?"▾":"▸");
+        var st=el("button","sub-tgl",taskOpen?"▾":"▸");
         st.title=nSub?"Show subtasks ("+nSub+")":"Add a subtask";
-        st.setAttribute("aria-expanded",S.expanded["a"+a.id]?"true":"false");
-        st.onclick=function(e){e.stopPropagation();S.expanded["a"+a.id]=!S.expanded["a"+a.id];render()};
+        st.setAttribute("aria-expanded",taskOpen?"true":"false");
+        st.onclick=function(e){e.stopPropagation();S.expanded["a"+a.id]=!taskOpen;S.workCollapsed["task:"+a.id]=taskOpen;rememberWorkFolds();render()};
         r.appendChild(st);
         r.appendChild(completionControl(a,null));
         var rm=el("button","row-main");rm.setAttribute("data-focus-key","activity:"+a.id);
@@ -688,7 +694,7 @@ function renderCampaigns(main){
           dup.onclick=function(){openDuplicate(a,false,false)};r.appendChild(dup);
         }
         aw.appendChild(r);
-        if(S.expanded["a"+a.id])aw.appendChild(subtaskTree(a));
+        if(taskOpen)aw.appendChild(subtaskTree(a));
         list.appendChild(aw);
       });
       card.appendChild(list);
@@ -785,7 +791,7 @@ function buildSteps(def){
   });
 }
 /* groups start open; S.expanded only records a deliberate collapse */
-function nodeOpen(id){var v=S.expanded["n"+id];return v===undefined?true:!!v}
+function nodeOpen(id){if(S.workCollapsed["group:"+id]!==undefined)return !S.workCollapsed["group:"+id];var v=S.expanded["n"+id];return v===undefined?true:!!v}
 function persistSubs(a){
   var arr=(a.subtasks||[]).slice();
   wq=wq.then(function(){return db.doc("activities/"+a.id).update({subtasks:arr})})
@@ -1366,7 +1372,7 @@ function subReuseActions(a,s,depth,onChange){
   function action(label,fn){var b=el("button",null,label);b.onclick=function(){menu.open=false;fn()};menu.appendChild(b)}
   action("Duplicate",function(){var copy=copyIndependentSubtask(s);copy.title+=" (copy)";a.subtasks=insertAfter(a.subtasks,s.id,copy);onChange();toast("Subtask duplicated")});
   if(depth<MAXDEPTH-1&&a.status!=="Published"&&!(s.done&&!kids(s).length))action("Break down with AI",function(){if(hasOverlayChanges()){toast("Save the current details first, then break this task down.");return}openActivityPlanner(a,onChange,s.id)});
-  if(depth<MAXDEPTH-1)action("Browse SOPs to add inside",function(){openTemplatePicker(a,s.id,depth+1,function(nodes,parent,ruleId){saveSubtaskWithSops(a,s.id,{},[ruleId],true).then(function(saved){a.subtasks=saved.subtasks;S.expanded["n"+s.id]=true;onChange()}).catch(function(e){toast(e.userMessage||msgFor(e))})})});return menu;
+  if(depth<MAXDEPTH-1)action("Browse SOPs to add inside",function(){openTemplatePicker(a,s.id,depth+1,function(nodes,parent,ruleId){saveSubtaskWithSops(a,s.id,{},[ruleId],true).then(function(saved){a.subtasks=saved.subtasks;S.expanded["n"+s.id]=true;S.workCollapsed["group:"+s.id]=false;rememberWorkFolds();onChange()}).catch(function(e){toast(e.userMessage||msgFor(e))})})});return menu;
 }
 
 /* One creative, several placements. Each placement is a different design,
@@ -1415,7 +1421,7 @@ function subAddInput(a,parentId,ph){
     e.preventDefault();
     var v=ai.value.trim();if(!v)return;
     ai.value="";S.focusAdd=key;
-    if(parentId)S.expanded["n"+parentId]=true;
+    if(parentId){S.expanded["n"+parentId]=true;S.workCollapsed["group:"+parentId]=false;rememberWorkFolds();}
     var n=newNode(v,"");saveSubs(a,addChild(a.subtasks||[],parentId,n)).then(function(){offerSubtaskSop(a,n.id)});
   };
   return ai;
@@ -1428,7 +1434,7 @@ function subNodes(host,a,nodes,depth){
     if(group){
       var cv=el("button","sub-tgl",open?"▾":"▸");
       cv.title=open?"Collapse":"Expand";
-      cv.onclick=function(e){e.stopPropagation();S.expanded["n"+s.id]=!open;render()};
+      cv.onclick=function(e){e.stopPropagation();S.expanded["n"+s.id]=!open;S.workCollapsed["group:"+s.id]=open;rememberWorkFolds();render()};
       r.appendChild(cv);
     }
     r.appendChild(completionControl(a,nodeById(a.subtasks,s.id)||s));
@@ -1468,11 +1474,11 @@ function subNodes(host,a,nodes,depth){
       pc.onclick=function(e){
         e.stopPropagation();
         S.placeFor=(S.placeFor===s.id?null:s.id);
-        S.expanded["n"+s.id]=true;render();
+        S.expanded["n"+s.id]=true;S.workCollapsed["group:"+s.id]=false;rememberWorkFolds();render();
       };
       r.appendChild(pc);
       var pl=el("button","sub-x plus","+");pl.title="Add one item under this";
-      pl.onclick=function(){S.expanded["n"+s.id]=true;S.focusAdd="n"+s.id;render()};
+      pl.onclick=function(){S.expanded["n"+s.id]=true;S.workCollapsed["group:"+s.id]=false;rememberWorkFolds();S.focusAdd="n"+s.id;render()};
       r.appendChild(pl);
     }
     if(writable()){
@@ -1658,6 +1664,7 @@ function render(){
     who.textContent=initials(S.me.name);
     who.title="Your account";who.setAttribute("aria-label","Your account: "+S.me.name);
   }else who.hidden=true;
+  var teamManage=$("team-manage");if(teamManage){teamManage.hidden=!S.me;teamManage.onclick=openTeamMembers;}
   renderMain();if(!requestedFocus)restoreViewport(position);
 }
 function renderMain(){
@@ -1756,7 +1763,7 @@ function overlay(node,dirty,preserveParent){
     var ff=node.querySelectorAll("input,select,textarea,.pill,.chk");
     for(var i=0;i<ff.length;i++)ff[i].disabled=true;
   }
-  var first=node.querySelector("[autofocus]")||node.querySelector("input,select,textarea"),opened=overlayState;if(first)setTimeout(function(){if(overlayState===opened)focusWithoutScroll(first)},120);
+  var first=node.querySelector("[autofocus]")||node.querySelector("input,select,textarea"),opened=overlayState;if(first)setTimeout(function(){if(overlayState===opened&&!node.contains(document.activeElement))focusWithoutScroll(first)},120);
 }
 document.addEventListener("keydown",function(e){
   if(e.key==="Escape"){if(!$("account-menu").hidden){closeAccount();$("who").focus()}else closeOverlay();return}
@@ -1801,8 +1808,50 @@ function dropdown(opts,val,blank){
   return s;
 }
 
+/* Assignable people are separate from Google sign-in profiles. */
+function memberNameKey(name){return "n-"+encodeURIComponent(normalizeSopName(name))}
+function memberEmailKey(email){return email?"e-"+encodeURIComponent(email.trim().toLowerCase()):""}
+function ownerIdentity(id){return S.ownerAliases[id]||id||""}
+function buildTeamDirectory(users,members){
+  var byEmail={},team=[],profiles={},aliases={},linked={};
+  (users||[]).forEach(function(u){if(u.email)byEmail[u.email.trim().toLowerCase()]=u});
+  (members||[]).forEach(function(m){var account=m.email&&byEmail[m.email.trim().toLowerCase()],id=account?account.id:m.id,person={id:id,memberId:m.id,name:m.name,email:m.email||"",role:m.role||"",connected:!!account};aliases[m.id]=id;profiles[m.id]={name:m.name};if(account)linked[account.id]=true;team.push(person)});
+  (users||[]).forEach(function(u){if(!linked[u.id])team.push({id:u.id,name:u.name||u.email||"Teammate",email:u.email||"",role:"",connected:true})});
+  var names={};team.forEach(function(p){var key=normalizeSopName(p.name);names[key]=(names[key]||0)+1});team.forEach(function(p){p.label=p.name+(names[normalizeSopName(p.name)]>1&&p.email?" · "+p.email:"");profiles[p.id]={name:p.label};if(p.memberId)profiles[p.memberId]={name:p.label}});
+  return {team:team.sort(function(a,b){return a.name.localeCompare(b.name)}),profiles:profiles,aliases:aliases};
+}
+function rebuildTeamDirectory(){var directory=buildTeamDirectory(S.userRoster,S.members);S.team=directory.team;S.ownerAliases=directory.aliases;Object.assign(S.profiles,directory.profiles)}
+function storeTeamMember(d,original){
+  var name=String(d.name||"").trim().replace(/\s+/g," "),email=String(d.email||"").trim().toLowerCase(),role=String(d.role||"").trim();
+  function fail(message){throw Object.assign(new Error(message),{userMessage:message})}
+  if(!name||name.length>100||role.length>80||(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))||email.length>200)fail("Enter a name and a valid email, or leave email blank.");
+  var conflict=S.team.find(function(p){return p.memberId!==(original&&original.id)&&(normalizeSopName(p.name)===normalizeSopName(name)||(email&&String(p.email||"").toLowerCase()===email))});if(conflict)fail("This person is already in the team. Choose "+conflict.name+" from the owner list.");
+  var ref=original?db.collection("teamMembers").doc(original.id):db.collection("teamMembers").doc(),nameKey=memberNameKey(name),emailKey=memberEmailKey(email),nameRef=db.doc("teamMemberNameClaims/"+nameKey),emailRef=emailKey?db.doc("teamMemberEmailClaims/"+emailKey):null;
+  return db.runTransaction(function(tx){
+    var oldName=original&&original.nameKey!==nameKey?db.doc("teamMemberNameClaims/"+original.nameKey):null,oldEmail=original&&original.emailKey&&original.emailKey!==emailKey?db.doc("teamMemberEmailClaims/"+original.emailKey):null;
+    return Promise.all([tx.get(ref),tx.get(nameRef),emailRef?tx.get(emailRef):null,oldName?tx.get(oldName):null,oldEmail?tx.get(oldEmail):null]).then(function(snaps){var current=snaps[0];
+      if(original&&(!current.exists||(current.data().revision||0)!==(original.revision||0)))fail("This member changed elsewhere. Reopen their latest details.");
+      if((snaps[1].exists&&snaps[1].data().memberId!==ref.id)||(snaps[2]&&snaps[2].exists&&snaps[2].data().memberId!==ref.id))fail("That name or email is already in use. Choose the existing team member.");
+      var now=new Date().toISOString(),member={name:name,email:email,role:role,nameKey:nameKey,emailKey:emailKey,createdBy:original?original.createdBy:S.me.id,createdAt:original?original.createdAt:now,updatedAt:now,revision:original?(original.revision||0)+1:1};
+      tx.set(ref,member);tx.set(nameRef,{memberId:ref.id,name:name});if(emailRef)tx.set(emailRef,{memberId:ref.id,email:email});if(oldName&&snaps[3].exists&&snaps[3].data().memberId===ref.id)tx.delete(oldName);if(oldEmail&&snaps[4].exists&&snaps[4].data().memberId===ref.id)tx.delete(oldEmail);return Object.assign({id:ref.id},member);
+    });
+  }).then(function(member){S.members=S.members.filter(function(m){return m.id!==member.id}).concat(member);rebuildTeamDirectory();render();return member});
+}
+function openTeamMember(member,onSaved){
+  var ui=actionDialog(member?"Edit team member":"Add team member","Create an assignable person. They do not need to sign in, and this does not send an invitation."),name=input("text",member?member.name:"","Full name"),role=input("text",member?member.role:"","e.g. Video editor"),email=input("email",member?member.email:"","name@nprep.in");name.maxLength=100;role.maxLength=80;email.maxLength=200;
+  ui.body.appendChild(field("Name *",name));ui.body.appendChild(field("Role (optional)",role));ui.body.appendChild(field("Email (optional)",email,"If this email later signs in with an allowed account, their existing assignments appear in My work."));
+  var save=el("button","btn btn-p",member?"Save member":"Add member");function validate(){save.disabled=!name.value.trim()||!email.checkValidity()};[name,role,email].forEach(function(n){n.oninput=validate});
+  save.onclick=function(){validate();if(save.disabled)return;runDialogSave(ui,save,function(){return storeTeamMember({name:name.value,email:email.value,role:role.value},member)},function(saved){if(onSaved)onSaved(saved);toast(member?"Team member updated":"Team member added")})};ui.foot.appendChild(save);validate();overlay(ui.node,function(){return name.value!==(member?member.name:"")||role.value!==(member?member.role:"")||email.value!==(member?member.email:"")},true);
+}
+function openTeamMembers(){
+  if(!writable())return;var ui=actionDialog("Team members","Add people before they sign in, then assign campaigns, tasks or subtasks to them."),list=el("div","team-directory"),search=input("search","","Search team members…");search.setAttribute("aria-label","Search team members");ui.body.insertBefore(search,ui.error);ui.body.insertBefore(list,ui.error);
+  function draw(){clear(list);var q=search.value.trim().toLowerCase(),people=S.team.filter(function(p){return [p.name,p.role,p.email].join(" ").toLowerCase().indexOf(q)>=0});if(S.teamError)list.appendChild(el("p","hint err",S.teamError));people.forEach(function(person){var row=el("div","team-member-row"),text=el("div");text.appendChild(el("strong",null,person.name));text.appendChild(el("p","hint",[person.role,person.email,person.connected?"Signed-in account":"Assignable without sign-in"].filter(Boolean).join(" · ")));row.appendChild(text);if(person.memberId){var edit=el("button","btn btn-o","Edit");edit.setAttribute("aria-label","Edit team member "+person.name);edit.onclick=function(){openTeamMember(S.members.find(function(m){return m.id===person.memberId}),draw)};row.appendChild(edit)}list.appendChild(row)});if(!people.length)list.appendChild(el("p","hint","No matching team members."))}
+  var add=el("button","btn btn-p","+ Add team member");add.disabled=!S.membersReady;add.onclick=function(){openTeamMember(null,draw)};ui.foot.appendChild(add);ui.cancel.textContent="Done";search.oninput=draw;draw();overlay(ui.node,null,true);
+}
+
 /* owner typeahead over the workspace */
 function ownerPicker(current,onPick){
+  current=ownerIdentity(current);
   var box=el("div","ac"),inp=input("text","","Search your team…"),menu=null,suppressQuery=false;
   inp.setAttribute("role","combobox");inp.setAttribute("aria-autocomplete","list");inp.setAttribute("aria-expanded","false");
   if(current&&S.profiles[current]&&S.profiles[current].name)inp.value=S.profiles[current].name;
@@ -1813,16 +1862,17 @@ function ownerPicker(current,onPick){
     shut();
     menu=el("div","ac-menu");menu.id="owner-list-"+(++fieldCount);menu.setAttribute("role","listbox");menu.setAttribute("aria-label","Teammates");
     inp.setAttribute("aria-controls",menu.id);inp.setAttribute("aria-expanded","true");
-    if(!list.length)menu.appendChild(el("p","owner-empty","No matching teammates. People appear here after their first sign-in."));
+    if(!list.length)menu.appendChild(el("p","owner-empty","No matching people. Add a team member below to assign them before sign-in."));
     list.sort(function(a,b){return a.id===(S.me&&S.me.id)?-1:b.id===(S.me&&S.me.id)?1:0});
     list.forEach(function(p){
-      var b=el("button",null,(p.name||"Someone")+(p.id===(S.me&&S.me.id)?" (you)":""));b.type="button";b.setAttribute("role","option");b.setAttribute("aria-selected",String(current===p.id));
-      b.onclick=function(){current=p.id;inp.value=p.name||"Someone";S.profiles[p.id]={name:p.name||""};onPick(p.id);shut()};
+      var b=el("button",null,(p.label||p.name||"Someone")+(p.id===(S.me&&S.me.id)?" (you)":""));b.type="button";b.setAttribute("role","option");b.setAttribute("aria-selected",String(current===p.id));
+      b.onclick=function(){current=p.id;inp.value=p.label||p.name||"Someone";S.profiles[p.id]={name:p.label||p.name||""};onPick(p.id);shut()};
       menu.appendChild(b);
     });
     var cb=el("button",null,"Leave unassigned");cb.type="button";cb.setAttribute("role","option");cb.setAttribute("aria-selected",String(!current));
     cb.onclick=function(){current="";inp.value="";onPick("");shut()};
     menu.appendChild(cb);
+    var addPerson=el("button",null,"+ Add team member");addPerson.type="button";addPerson.disabled=!S.membersReady;addPerson.onclick=function(){shut();openTeamMember(null,function(saved){var id=ownerIdentity(saved.id),person=S.team.find(function(p){return p.id===id});current=id;inp.value=person?person.label:saved.name;onPick(id)})};menu.appendChild(addPerson);
     box.appendChild(menu);
     menu.onkeydown=function(e){
       var opts=Array.from(menu.querySelectorAll("button")),i=opts.indexOf(document.activeElement);
@@ -2320,7 +2370,7 @@ function saveAiChecklist(a,phases,planId,brief,targetId){
   return wq.then(function(){return db.runTransaction(function(tx){var ref=db.doc("activities/"+a.id);return tx.get(ref).then(function(snap){
     if(!snap.exists)throw new Error("This activity no longer exists.");var result=appendAiChecklist(Object.assign({id:a.id},snap.data()),phases,planId,brief,targetId);
     tx.update(ref,{subtasks:result.activity.subtasks,aiBrief:result.activity.aiBrief||brief,appliedAiPlans:result.activity.appliedAiPlans||[]});return result;
-  })})}).then(function(result){Object.assign(a,result.activity);S.activities=S.activities.map(function(current){return current.id===a.id?result.activity:current});if(targetId)S.expanded["n"+targetId]=true;render();return result});
+  })})}).then(function(result){Object.assign(a,result.activity);S.activities=S.activities.map(function(current){return current.id===a.id?result.activity:current});if(targetId){S.expanded["n"+targetId]=true;S.workCollapsed["group:"+targetId]=false;rememberWorkFolds();}render();return result});
 }
 function saveAiDirection(direction,audience){
   if(!S.me||!S.me.id)return Promise.reject(new Error("Sign in again to save your AI direction."));
@@ -2580,9 +2630,10 @@ function showGate(kind,extra){
 
 function startData(){
   subs.forEach(function(f){try{f()}catch(e){}});subs=[];
-  S.loading=true;S.err=null;S.sopReady=false;S.sopRules=[];pending=5;render();
+  S.loading=true;S.err=null;S.sopReady=false;S.sopRules=[];pending=6;render();
   S.templates=[];S.templatesLoading=true;S.templateError="";
-  var waiting={campaigns:true,activities:true,users:true,sopRules:true,subtaskTemplates:true};
+  S.members=[];S.userRoster=[];S.ownerAliases={};S.membersReady=false;S.teamError="";
+  var waiting={campaigns:true,activities:true,users:true,teamMembers:true,sopRules:true,subtaskTemplates:true};
   function received(key,snap){
     if(waiting[key]&&(!snap||!snap.metadata.fromCache)){
       waiting[key]=false;settled();
@@ -2618,13 +2669,10 @@ function startData(){
   /* the team roster, so owners resolve to real names */
   subs.push(db.collection("users").onSnapshot({includeMetadataChanges:true},function(snap){
     var mine=S.me&&snap.docs.find(function(d){return d.id===S.me.id});S.aiPlanning=mine?(mine.data().aiPlanning||{}):{};
-    S.team=snap.docs.map(function(d){
-      var v=d.data()||{};
-      return {id:d.id,name:v.name||v.email||"Teammate"};
-    });
-    S.team.forEach(function(p){S.profiles[p.id]={name:p.name}});
+    S.userRoster=snap.docs.map(function(d){var v=d.data()||{};return {id:d.id,name:v.name||v.email||"Teammate",email:v.email||""}});rebuildTeamDirectory();
     received("users",snap);render();
   },function(){received("users")}));
+  subs.push(db.collection("teamMembers").onSnapshot({includeMetadataChanges:true},function(snap){S.members=snap.docs.map(function(d){return Object.assign({},d.data(),{id:d.id})});S.membersReady=true;S.teamError="";rebuildTeamDirectory();received("teamMembers",snap);render()},function(e){S.membersReady=false;S.teamError="The team directory could not load. Reload to try again.";received("teamMembers");render()}));
 }
 
 /* Stands in for the identity the artifact runtime used to provide. */
@@ -2641,7 +2689,7 @@ function makeUser(){
     search:function(q){
       q=String(q||"").toLowerCase().trim();
       var list=S.team.slice().sort(function(a,b){return a.name>b.name?1:-1});
-      if(q)list=list.filter(function(p){return p.name.toLowerCase().indexOf(q)>=0});
+      if(q)list=list.filter(function(p){return [p.name,p.email,p.role].join(" ").toLowerCase().indexOf(q)>=0});
       return Promise.resolve(list.slice(0,8));
     },
     can:function(){return Promise.resolve(true)}
@@ -2678,13 +2726,13 @@ document.addEventListener("click",function(e){if(!e.target.closest(".account"))c
   auth.onAuthStateChanged(function(u){
     if(!u){
       subs.forEach(function(f){try{f()}catch(e){}});subs=[];
-      S.me=null;S.aiPlanning={};S.campaigns=[];S.activities=[];S.team=[];S.templates=[];S.templateError="";S.templatesLoading=true;S.sopRules=[];S.sopReady=false;S.loading=true;
+      S.me=null;S.aiPlanning={};S.campaigns=[];S.activities=[];S.team=[];S.userRoster=[];S.members=[];S.ownerAliases={};S.workCollapsed={};S.membersReady=false;S.templates=[];S.templateError="";S.templatesLoading=true;S.sopRules=[];S.sopReady=false;S.loading=true;
       render();showGate("signin");return;
     }
     if(!emailAllowed(u.email)){S.me=null;render();showGate("denied",u.email);return;}
     $("gate").hidden=true;
     document.querySelector(".topbar").inert=false;$("workspace").inert=false;
-    S.me={id:u.uid,name:u.displayName||u.email,email:u.email};S.aiPlanning={};S.workScope="my";
+    S.me={id:u.uid,name:u.displayName||u.email,email:u.email};S.aiPlanning={};S.workScope="my";restoreWorkFolds();
     S.canWrite=true;
     U=makeUser();
     db.collection("users").doc(u.uid).set({
