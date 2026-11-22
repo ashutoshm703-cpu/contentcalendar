@@ -6,7 +6,7 @@ const FIREBASE_KEY = 'AIzaSyAlE7Olc49cSQoJG3AzscE84yn9ZYnhxVk';
 const MODEL = () => process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
 const recent = new Map(); // Best-effort per-instance burst protection; Google also enforces project quotas.
 const platforms = ['YouTube','Instagram','Facebook','WhatsApp','Telegram','Push','App'];
-const formats = ['Reel','Carousel','Story','Long form','Live','Short','Post','Push notification','WhatsApp broadcast','Telegram post','Email','Thumbnail','Other'];
+const formats = ['Reel','Carousel','Story','Long form','Live','Short','NASHTA/PreBoard','Post','Push notification','WhatsApp broadcast','Telegram post','Email','Thumbnail','Other'];
 const str = (v,max=500) => typeof v === 'string' ? v.trim().slice(0,max) : '';
 const fail = (status,message) => Object.assign(new Error(message),{status});
 function date(v) { const time=typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)?Date.parse(v+'T00:00:00Z'):NaN;return Number.isFinite(time)&&new Date(time).toISOString().slice(0,10)===v; }

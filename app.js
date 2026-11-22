@@ -17,6 +17,7 @@ var FORMATS=[
    angles:["Academic discussion","Strategy discussion","Vacancy live"]},
   {id:"Short",label:"Short",group:"YouTube",platforms:["YouTube"],cta:true,
    angles:["Motivational (nursing story)","Strategy / salary","Academic","Testimonial — user","Testimonial — topper","Promotional","Updates"]},
+  {id:"NASHTA/PreBoard",label:"NASHTA/PreBoard",group:"Tests",platforms:[],angles:[]},
   {id:"Post",label:"Post",group:"Other",platforms:["Facebook"],angles:[]},
   {id:"Push notification",label:"Push notification",group:"Other",platforms:["Push"],angles:[]},
   {id:"WhatsApp broadcast",label:"WhatsApp broadcast",group:"Other",platforms:["WhatsApp"],angles:[]},
@@ -81,13 +82,14 @@ var STEPS={
   "WhatsApp broadcast":["Copy","Review","Upload"],
   "Telegram post":["Copy","Review","Upload"],
   "Email":["Copy","Review","Upload"],
+  "NASHTA/PreBoard":["Prepare questions","Review answer key","Configure test","Publish test","Review results"],
   "Thumbnail":["Design","Review"]
 };
 function formatById(id){for(var i=0;i<FORMATS.length;i++)if(FORMATS[i].id===id)return FORMATS[i];return null}
 function formatSelect(cur,blank,cls){
   var s=el("select");if(cls)s.className=cls;
   var o0=el("option",null,blank);o0.value="";s.appendChild(o0);
-  [["Instagram","Instagram"],["YouTube","YouTube"],["Other channels","Other"]].forEach(function(g){
+  [["Instagram","Instagram"],["YouTube","YouTube"],["Tests","Tests"],["Other channels","Other"]].forEach(function(g){
     var og=document.createElement("optgroup");og.label=g[0];
     FORMATS.filter(function(x){return x.group===g[1]}).forEach(function(x){
       var op=el("option",null,x.label);op.value=x.id;if(x.id===cur)op.selected=true;og.appendChild(op);
@@ -1184,7 +1186,7 @@ function openSopRule(rule,onSaved){
   ui.body.appendChild(field("SOP name *",name));ui.body.appendChild(el("h3","sop-condition-title","When should this SOP appear?"));ui.body.appendChild(el("p","hint sop-condition-help","Match any condition below. Within a condition, all selected fields must match. Every condition uses the same checklist."));ui.body.appendChild(conditionList);
   conditionHint.setAttribute("role","status");conditionHint.hidden=true;ui.body.appendChild(conditionHint);
   var addCondition=el("button","sop-add-condition","+ Add another condition");addCondition.type="button";addCondition.onclick=function(){if(d.conditions.length>=20)return;d.conditions.push({platform:"",format:"",angle:""});drawConditions(d.conditions.length-1,"platform");validate()};ui.body.appendChild(addCondition);
-  function formatFits(platform,format){var f=formatById(format);return !f||!platform||f.group==="Other"||f.platforms.indexOf(platform)>=0}
+  function formatFits(platform,format){var f=formatById(format);return !f||!platform||f.group==="Other"||!f.platforms.length||f.platforms.indexOf(platform)>=0}
   function drawConditions(focusIndex,focusField){
     clear(conditionList);
     d.conditions.forEach(function(c,index){

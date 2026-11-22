@@ -59,6 +59,9 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   expanded campaign. Goal, owner and status are available under Campaign details.
 - Activities start with a title, campaign and due date. Content details, a
   SOP suggestions and a script are available in expandable sections.
+- **Format → Tests → NASHTA/PreBoard** identifies a test/assessment. It is
+  available in task and subtask forms, SOP conditions, Quick Add and filters,
+  with no platform forced by the format. AI planning treats it as an assessment.
 - Activity details use **Save changes**. Status and checklist edits save
   immediately. Closing a changed form offers **Keep editing** or **Discard
   changes**; refreshing the page also warns about an unfinished form.
