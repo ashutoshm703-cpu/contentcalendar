@@ -59,9 +59,19 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   expanded campaign. Goal, owner and status are available under Campaign details.
 - Activities start with a title, campaign and due date. Content details, a
   SOP suggestions and a script are available in expandable sections.
-- **Format → Tests → NASHTA/PreBoard** identifies a test/assessment. It is
-  available in task and subtask forms, SOP conditions, Quick Add and filters,
-  with no platform forced by the format. AI planning treats it as an assessment.
+- **Content options** beside My work / Team work (also in the account menu)
+  manages shared **Platform → Format → Topic/category** dropdown choices.
+  Select a platform to add or rename its formats, then select a format to manage
+  its topics. Save options makes these choices available to the whole team in
+  task/subtask forms, SOP conditions, Quick Add and filters. Changing a parent
+  clears incompatible choices below it. Duplicate names within a list are blocked.
+  Archive/restore hides or restores choices without changing saved tasks or SOP
+  conditions; renaming keeps stable IDs. Concurrent edits require reopening the
+  latest list. Formats shared across platforms have a shared name.
+- **NASHTA/PreBoard** identifies a test/assessment, available after choosing a
+  platform. AI planning retains assessment behavior even if its name is edited.
+- Owners appear as compact badges with initials and a name; long names truncate
+  visually and remain available in the badge's accessible label and tooltip.
 - Activity details use **Save changes**. Status and checklist edits save
   immediately. Closing a changed form offers **Keep editing** or **Discard
   changes**; refreshing the page also warns about an unfinished form.
@@ -251,6 +261,9 @@ Collections:
   dueDate, dueTime, owner, status, description, keywords[], script,
   subtasks[] (nested, each with platform, kind, owner, due, dueTime, children[])
 - `users/{uid}` — written on sign-in so owner pickers show real names
+- `workspaceSettings/contentOptions` — versioned shared platforms with nested
+  formats and topics. Each option has a stable ID, label and archived flag.
+  Authenticated team members can read/save; version increments prevent overwrites.
 - `subtaskTemplates/{id}` — legacy saved groups. They appear in the SOP library;
   editing one writes an SOP and stores its ID in `sopId`. New group creation is
   disabled by the rules. Existing data remains readable.

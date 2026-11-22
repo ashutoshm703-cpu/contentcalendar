@@ -5,14 +5,12 @@ const { DEFAULT_DIRECTION, systemInstruction } = require('../lib/ai-direction.cj
 const FIREBASE_KEY = 'AIzaSyAlE7Olc49cSQoJG3AzscE84yn9ZYnhxVk';
 const MODEL = () => process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
 const recent = new Map(); // Best-effort per-instance burst protection; Google also enforces project quotas.
-const platforms = ['YouTube','Instagram','Facebook','WhatsApp','Telegram','Push','App'];
-const formats = ['Reel','Carousel','Story','Long form','Live','Short','NASHTA/PreBoard','Post','Push notification','WhatsApp broadcast','Telegram post','Email','Thumbnail','Other'];
 const str = (v,max=500) => typeof v === 'string' ? v.trim().slice(0,max) : '';
 const fail = (status,message) => Object.assign(new Error(message),{status});
 function date(v) { const time=typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)?Date.parse(v+'T00:00:00Z'):NaN;return Number.isFinite(time)&&new Date(time).toISOString().slice(0,10)===v; }
 const addDays=(v,n)=>new Date(Date.parse(v+'T00:00:00Z')+n*86400000).toISOString().slice(0,10);
 function cleanSteps(value,limit,maxChars){let remaining=maxChars;const out=[];for(const n of (Array.isArray(value)?value:[]).slice(0,limit)){
-  if(!n||!str(n.title,180))continue;const row={id:str(n.id,150),title:str(n.title,180),phase:str(n.phase,180),description:str(n.description,400),platform:platforms.includes(n.platform)?n.platform:'',kind:str(n.kind,60),done:n.done===true,due:date(n.due)?n.due:''},size=JSON.stringify(row).length;
+  if(!n||!str(n.title,180))continue;const row={id:str(n.id,150),title:str(n.title,180),phase:str(n.phase,180),description:str(n.description,400),platform:str(n.platform,100),kind:str(n.kind,60),done:n.done===true,due:date(n.due)?n.due:''},size=JSON.stringify(row).length;
   if(size>remaining)break;remaining-=size;out.push(row);
 }return out}
 function brief(body) {
@@ -29,14 +27,14 @@ function brief(body) {
   }
   const today=date(body.today)?body.today:new Date().toISOString().slice(0,10);
   return {
-    activity:{title:str(a.title,160),type:formats.includes(a.type)?a.type:'Other',angle:str(a.angle,100),platforms:(Array.isArray(a.platforms)?a.platforms:[]).filter(p=>platforms.includes(p)).slice(0,7),dueDate:a.dueDate,description:str(a.description,1000),campaign:{name:str(a.campaign?.name,160),goal:str(a.campaign?.goal,600)}},
+    activity:{title:str(a.title,160),type:str(a.type,100)||'Other',formatId:str(a.formatId,180)||str(a.type,100),angle:str(a.angle,100),platforms:(Array.isArray(a.platforms)?a.platforms:[]).map(p=>str(p,100)).filter(Boolean).slice(0,7),dueDate:a.dueDate,description:str(a.description,1000),campaign:{name:str(a.campaign?.name,160),goal:str(a.campaign?.goal,600)}},
     brief:{goal:str(b.goal,1000),audience:str(b.audience,600),constraints:str(b.constraints,1000)},
     directionPrompt:str(body.directionPrompt,6000)||DEFAULT_DIRECTION,
     target,
     today,latestDate:addDays(a.dueDate<today?today:a.dueDate,7),
     existing:cleanSteps(body.existing,100,12000),
-    references:(Array.isArray(body.references)?body.references:[]).slice(0,3).filter(r=>r&&/^work:[\w-]{1,150}$/.test(r.id||'')).map(r=>({id:r.id,title:str(r.title,160),type:formats.includes(r.type)?r.type:'Other',platforms:(Array.isArray(r.platforms)?r.platforms:[]).filter(p=>platforms.includes(p)).slice(0,7),angle:str(r.angle,100),description:str(r.description,600),status:str(r.status,40),steps:cleanSteps(r.steps,30,4500)})).filter(r=>r.steps.length),
-    sops:(Array.isArray(body.sops)?body.sops:[]).slice(0,3).filter(s=>s&&/^sop:[\w-]{1,150}$/.test(s.id||'')).map(s=>({id:s.id,name:str(s.name,100),conditions:(Array.isArray(s.conditions)?s.conditions:[s]).slice(0,20).map(c=>({platform:str(c.platform,40),format:str(c.format,50),angle:str(c.angle,100)})),steps:cleanSteps(s.steps,40,6000)})).filter(s=>s.steps.length)
+    references:(Array.isArray(body.references)?body.references:[]).slice(0,3).filter(r=>r&&/^work:[\w-]{1,150}$/.test(r.id||'')).map(r=>({id:r.id,title:str(r.title,160),type:str(r.type,100)||'Other',platforms:(Array.isArray(r.platforms)?r.platforms:[]).map(p=>str(p,100)).filter(Boolean).slice(0,7),angle:str(r.angle,100),description:str(r.description,600),status:str(r.status,40),steps:cleanSteps(r.steps,30,4500)})).filter(r=>r.steps.length),
+    sops:(Array.isArray(body.sops)?body.sops:[]).slice(0,3).filter(s=>s&&/^sop:[\w-]{1,150}$/.test(s.id||'')).map(s=>({id:s.id,name:str(s.name,100),conditions:(Array.isArray(s.conditions)?s.conditions:[s]).slice(0,20).map(c=>({platform:str(c.platform,100),format:str(c.format,100),angle:str(c.angle,100)})),steps:cleanSteps(s.steps,40,6000)})).filter(s=>s.steps.length)
   };
 }
 const taskProperties={title:{type:'string'},description:{type:'string'},dueDate:{type:'string'},sourceId:{type:'string'},reason:{type:'string'}};

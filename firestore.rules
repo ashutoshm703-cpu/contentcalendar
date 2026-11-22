@@ -81,6 +81,20 @@ service cloud.firestore {
       allow read, write: if nprep();
     }
 
+    // Shared dropdown choices; stable IDs preserve tasks and SOP conditions.
+    match /workspaceSettings/contentOptions {
+      allow read: if nprep();
+      function validOptions() {
+        let o = request.resource.data;
+        return o.keys().hasOnly(['version', 'platforms', 'updatedAt', 'updatedBy'])
+          && o.version is int && o.platforms is list && o.platforms.size() <= 30
+          && o.updatedAt is string && o.updatedBy == request.auth.uid;
+      }
+      allow create: if nprep() && validOptions() && request.resource.data.version == 1;
+      allow update: if nprep() && validOptions()
+        && request.resource.data.version == resource.data.version + 1;
+    }
+
     // The roster, so owner names resolve. You may only write your own row.
     match /users/{uid} {
       allow read: if nprep();

@@ -1,0 +1,23 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const source=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
+const context={document:{addEventListener(){},getElementById(){return {}}},window:{addEventListener(){},matchMedia(){return {matches:false}}}};vm.createContext(context);
+vm.runInContext(source.slice(0,source.indexOf('(function boot(){')).replace(/^render\(\);$/m,'')+`
+render=function(){};globalThis.api={S,defaultContentOptions,setContentOptions,contentFormats,contentTopics,contentFormatFits,platformLabel,formatLabel,topicLabel,validateContentOptions,saveContentOptions,sopMatches,subtaskConditionContext,setDB(value){db=value}};
+})();`,context);
+const api=context.api,options=api.defaultContentOptions();assert.equal(api.validateContentOptions(options),true);
+assert.equal(api.contentFormatFits('YouTube','Long form'),true);assert.equal(api.contentFormatFits('Instagram','Long form'),false);assert.equal(api.contentFormatFits('App','NASHTA/PreBoard'),true);
+assert.equal(api.contentTopics('Instagram','Reel').some(t=>t.id==='Motivational'),true);assert.equal(api.contentTopics('YouTube','Reel').length,0);
+const videoParent={platforms:['YouTube'],type:'Long form',angle:'Academic'};
+assert.equal(api.subtaskConditionContext({platform:'Instagram'},videoParent).type,'');assert.equal(api.subtaskConditionContext({platform:'Instagram'},videoParent).angle,'');assert.equal(api.subtaskConditionContext({},videoParent).type,'Long form');
+const platform={id:'custom-platform',label:'Learning app',abbr:'LA',archived:false,formats:[{id:'custom-format',label:'Practice test',archived:false,topics:[{id:'custom-topic',label:'Nursing fundamentals',archived:false}]}]};
+options.platforms.push(platform);api.setContentOptions(options);assert.equal(api.contentFormats(platform.id)[0].id,'custom-format');assert.equal(api.topicLabel('custom-topic','custom-format',platform.id),'Nursing fundamentals');
+api.S.sopReady=true;api.S.sopRules=[{id:'custom-rule',name:'Practice SOP',enabled:true,conditions:[{platform:platform.id,format:'custom-format',angle:'custom-topic'}]}];assert.equal(api.sopMatches({platforms:[platform.id],type:'custom-format',angle:'custom-topic'})[0].id,'custom-rule');
+platform.label='Learning portal';platform.formats[0].label='Mock exam';platform.formats[0].topics[0].label='Core nursing';api.setContentOptions(options);assert.equal(api.platformLabel(platform.id),'Learning portal');assert.equal(api.formatLabel('custom-format',platform.id),'Mock exam');assert.equal(api.topicLabel('custom-topic','custom-format',platform.id),'Core nursing');assert.equal(api.sopMatches({platforms:[platform.id],type:'custom-format',angle:'custom-topic'})[0].id,'custom-rule');
+platform.formats[0].archived=true;api.setContentOptions(options);assert.equal(api.contentFormatFits(platform.id,'custom-format'),false);assert.equal(api.formatLabel('custom-format',platform.id),'Mock exam');assert.equal(api.contentFormats(platform.id,true)[0].topics[0].id,'custom-topic');
+platform.formats[0].archived=false;platform.formats[0].topics.push({id:'duplicate',label:' CORE   nursing ',archived:false});assert.throws(()=>api.validateContentOptions(options));platform.formats[0].topics.pop();
+const duplicate=structuredClone(options);duplicate.platforms.push({...platform,id:'another-platform',label:' Learning  portal '});assert.throws(()=>api.validateContentOptions(duplicate));
+console.log('PASS: platform-dependent formats and topics; custom options; normalized duplicate protection; archive/restore; stable references and SOP matching after rename');
+(async()=>{let saved=null,fail=false;api.S.me={id:'owner'};api.setDB({doc(){return {}},async runTransaction(fn){let pending;const result=await fn({async get(){return {exists:!!saved,data(){return structuredClone(saved)}}},set(ref,data){pending=structuredClone(data)}});if(fail)throw new Error('Save failed');saved=pending;return result}});
+const first=await api.saveContentOptions(options,0);assert.equal(first.version,1);assert.equal(saved.updatedBy,'owner');await assert.rejects(api.saveContentOptions(options,0),e=>e.userMessage.includes('changed elsewhere'));
+fail=true;await assert.rejects(api.saveContentOptions(options,1));assert.equal(saved.version,1);fail=false;assert.equal((await api.saveContentOptions(options,1)).version,2);console.log('PASS: atomic shared options; version conflict detection; failed-save recovery; no task or SOP rewrites');
+})().catch(e=>{console.error(e);process.exitCode=1});

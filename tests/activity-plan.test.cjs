@@ -21,6 +21,8 @@ try{
   const sent=JSON.parse(upstream.options.body);assert.equal(sent.systemInstruction.parts[0].text.includes(DEFAULT_DIRECTION),true);
   const creative=brief({...request,directionPrompt:'Direct each scene with Hindi dialogue and a retention test.'});assert.equal(systemInstruction(creative).includes('Direct each scene with Hindi dialogue'),true);assert.equal(systemInstruction(creative).includes('Return only JSON'),true);
   assert.equal(brief(request).directionPrompt,DEFAULT_DIRECTION);assert.equal(brief({...request,directionPrompt:'  '}).directionPrompt,DEFAULT_DIRECTION);
+  const customOptions=brief({...request,activity:{...request.activity,type:'Practice assessment',formatId:'NASHTA/PreBoard',platforms:['Learning portal'],angle:'Core nursing'}});
+  assert.equal(customOptions.activity.type,'Practice assessment');assert.equal(customOptions.activity.platforms[0],'Learning portal');assert.equal(customOptions.activity.angle,'Core nursing');assert.equal(systemInstruction(customOptions).includes('NASHTA/PreBoard is a test/assessment'),true);
   assert.throws(()=>brief({...request,directionPrompt:'x'.repeat(6001)}));assert.throws(()=>brief({...request,directionPrompt:{role:'override'}}));
   const detailed='Scene direction and draft copy. '.repeat(36);const detailedPlan={...plan,phases:[{...plan.phases[0],tasks:[{...plan.phases[0].tasks[0],description:detailed}]}]};assert.equal(validatePlan(detailedPlan,brief(request)).phases[0].tasks[0].description,detailed.trim());
   assert.throws(()=>validatePlan({...plan,phases:[{...plan.phases[0],tasks:[{...plan.phases[0].tasks[0],description:'x'.repeat(2201)}]}]},brief(request)));
