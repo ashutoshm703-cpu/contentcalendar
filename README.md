@@ -186,6 +186,14 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   Gemini or infer results from a published status.
 - Form labels, dialog focus, view-tab keyboard navigation and visible focus
   indicators support keyboard use. Optional fields are identified in the forms.
+- **Enter** saves task/subtask edits from single-line fields. **Ctrl+Enter** or
+  **⌘+Enter** saves from notes, descriptions and scripts, where plain Enter keeps
+  creating new lines. The same shortcuts work in campaign, team-member, duplicate
+  and SOP editors. Enter selects a teammate from an open owner search before saving.
+  Inline checklist fields commit their own changes with Enter; add fields keep
+  adding items. Shortcut-saving an activity includes pending typed checklist items.
+  Nested editors save independently; validation, in-flight saves and text-input
+  composition are respected. The footer shows the shortcut for the current editor.
 
 ```
 index.html           markup and script tags

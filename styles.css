@@ -275,6 +275,7 @@ textarea{resize:vertical;min-height:76px;font-weight:300;line-height:1.6}
 .deadline-time{font-size:10px;font-weight:500;color:var(--text-2);white-space:nowrap}
 .due-time{display:inline-block;align-self:flex-start;white-space:nowrap;font-size:11px;line-height:1.5;font-weight:500;color:var(--brand);background:var(--sky-soft);border-radius:5px;padding:2px 6px}
 .ps-due-time{flex:1 1 106px;min-width:0}.ps-due-time label{font-size:10px;margin-bottom:4px}.ps-due-time input.ps-time{width:100%;min-width:0;font-size:12px;padding:7px 9px;background:var(--surface)}
+.keyboard-save-hint{flex:1 1 100%;order:10;font-size:10px;line-height:1.5;color:var(--text-3);text-align:right;margin-top:2px}
 .subtask-modal .f2>.field:last-child{grid-column:1/-1}
 .cell .due-time{font-size:10px;padding:2px 4px}
 .work-group .chip .tm{margin-left:0;padding:2px 6px;border-radius:5px;background:var(--sky-soft);color:var(--brand);font-size:11px;white-space:nowrap}

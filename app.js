@@ -905,7 +905,7 @@ function openDuplicate(source,campaign,repeating){
       return batch.commit();
     })},function(){toast(repeating?"Recurring activities created":campaign?"Campaign and activities duplicated":"Activity duplicated")});
   };
-  ui.foot.appendChild(save);validate();overlay(ui.node,null,true);
+  ui.foot.appendChild(save);validate();keyboardSave(ui.node,save);overlay(ui.node,null,true);
 }
 /* One library owns SOP names, conditions and editable checklists. Legacy groups
    remain visible here until edited; no existing checklist is deleted. */
@@ -1268,7 +1268,7 @@ function openSopRule(rule,onSaved){
       var entry=input("text",draft.text,parentId?"Add a subtask…":"Add a step…");entry.setAttribute("aria-label",parentId?"New subtask in "+(nodeById(d.nodes,parentId).title||"untitled group"):"New SOP step");entry.setAttribute("data-sop-composer",composerKey(parentId));entry.enterKeyHint="next";
       var add=el("button","sop-composer-add","Add");add.type="button";add.disabled=!draft.text.trim();add.setAttribute("aria-label",parentId?"Add subtask to "+(nodeById(d.nodes,parentId).title||"untitled group"):"Add SOP step");
       entry.oninput=function(){clearMoveUndo();draft.text=entry.value;add.disabled=!draft.text.trim();validate()};
-      entry.onkeydown=function(e){if(e.key==="Enter"&&!e.isComposing){e.preventDefault();commitDraft(parentId,true)}};
+      entry.onkeydown=function(e){if(e.key==="Enter"&&!e.isComposing&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.shiftKey){e.preventDefault();commitDraft(parentId,true)}};
       add.onclick=function(){commitDraft(parentId,true)};row.appendChild(entry);row.appendChild(add);builder.appendChild(row);
     }
     function rows(nodes,depth,parentId){nodes.forEach(function(n,index){
@@ -1294,7 +1294,7 @@ function openSopRule(rule,onSaved){
         toggle.onclick=function(){collapsed[n.id]=!collapsed[n.id];drawBuilder({id:n.id,control:"toggle"})};row.appendChild(toggle);
       }else{var spacer=el("span","sop-group-spacer");spacer.setAttribute("aria-hidden","true");row.appendChild(spacer)}
       var title=input("text",n.title,"Untitled step");title.setAttribute("aria-label","Subtask title");title.setAttribute("data-sop-node",n.id);title.oninput=function(){clearMoveUndo();d.nodes=patchNode(d.nodes,n.id,{title:title.value});validate()};
-      title.onkeydown=function(e){if(e.key==="Enter"&&!e.isComposing){e.preventDefault();if(title.value.trim())startAdding(parentId,n.id)}};row.appendChild(title);
+      title.onkeydown=function(e){if(e.key==="Enter"&&!e.isComposing&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.shiftKey){e.preventDefault();if(title.value.trim())startAdding(parentId,n.id)}};row.appendChild(title);
       var count=el("span","sop-group-count",group?String(kids(n).length):"");if(group)count.title=kids(n).length+" nested steps";row.appendChild(count);
       var actions=el("button","sop-actions-trigger","⋯");actions.type="button";actions.title="Step actions";actions.setAttribute("aria-label","Actions for SOP step "+(n.title||"untitled step"));actions.setAttribute("aria-haspopup","menu");actions.setAttribute("aria-expanded","false");row.appendChild(actions);
       var menu=el("div","sop-actions-popover");menu.setAttribute("popover","auto");menu.setAttribute("role","menu");menu.setAttribute("aria-label","Actions for "+(n.title||"untitled step"));
@@ -1360,7 +1360,7 @@ function openSopRule(rule,onSaved){
     var affected=el("details"),summary=el("summary",null,"View affected activities");affected.appendChild(summary);var list=el("ul","sop-steps");ongoing.forEach(function(a){list.appendChild(el("li",null,a.title))});affected.appendChild(list);choice.body.appendChild(affected);
     function choose(label,update){var button=el("button","btn "+(update?"btn-p":"btn-o"),label);button.onclick=function(){runDialogSave(choice,button,function(){return wq.then(function(){return storeSopRule(payload,update,rule)})},function(result){closeOverlay(true);saved(result)})};choice.foot.appendChild(button)}
     choose("SOP only",false);choose("Update unfinished tasks",true);overlay(choice.node,null,true);
-  };ui.foot.appendChild(save);drawConditions();drawBuilder();validate();overlay(ui.node,function(){return JSON.stringify(d)!==initial||Object.keys(composerDrafts).some(function(key){return !!composerDrafts[key].text.trim()&&(key==="root"||nodeById(d.nodes,key))})},true);
+  };ui.foot.appendChild(save);drawConditions();drawBuilder();validate();keyboardSave(ui.node,save,true);overlay(ui.node,function(){return JSON.stringify(d)!==initial||Object.keys(composerDrafts).some(function(key){return !!composerDrafts[key].text.trim()&&(key==="root"||nodeById(d.nodes,key))})},true);
 }
 function openTemplatePicker(a,parentId,depth,onAdd){
   var ui=actionDialog("Browse SOPs","Choose an SOP checklist to add. Its existing subtasks and progress are kept.");
@@ -1424,7 +1424,7 @@ function subAddInput(a,parentId,ph){
   var ai=el("input");ai.type="text";ai.className="sub-add";
   ai.placeholder=ph;ai.setAttribute("data-focus",key);
   ai.onkeydown=function(e){
-    if(e.key!=="Enter")return;
+    if(e.key!=="Enter"||e.isComposing||e.repeat||e.ctrlKey||e.metaKey||e.altKey||e.shiftKey)return;
     e.preventDefault();
     var v=ai.value.trim();if(!v)return;
     ai.value="";S.focusAdd=key;
@@ -1573,7 +1573,7 @@ function quickAdd(c){
       .catch(function(e){go.disabled=false;go.textContent="Add";toast(msgFor(e))});
   }
   go.onclick=add;
-  ti.onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();add()}};
+  ti.onkeydown=function(e){if(e.key==="Enter"&&!e.isComposing&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.shiftKey){e.preventDefault();add()}};
   /* At rest this is one field. The rest arrives when you start typing. */
   var row2=el("div","qrow");
   box.appendChild(ti);box.appendChild(row2);
@@ -1772,7 +1772,34 @@ function overlay(node,dirty,preserveParent){
   }
   var first=node.querySelector("[autofocus]")||node.querySelector("input,select,textarea"),opened=overlayState;if(first)setTimeout(function(){if(overlayState===opened&&!node.contains(document.activeElement))focusWithoutScroll(first)},120);
 }
+/* Save only the active editor; inputs with their own Enter action take priority. */
+function keyboardSave(node,save,checklist){
+  save.setAttribute("aria-keyshortcuts","Enter Control+Enter Meta+Enter");save.title="Enter to save · Ctrl/Cmd+Enter from notes";
+  var hint=el("p","keyboard-save-hint",checklist?"Enter adds a step · Ctrl/⌘+Enter saves":"Enter saves · Ctrl/⌘+Enter from notes");node.querySelector(".p-foot").appendChild(hint);
+  node.addEventListener("keydown",function(e){
+    if(e.key!=="Enter"||e.isComposing||e.keyCode===229||e.defaultPrevented||!overlayState||overlayState.node!==node)return;
+    var target=e.target,shortcut=e.ctrlKey||e.metaKey;
+    if(e.repeat){if(shortcut||(!target.matches("textarea")&&!target.isContentEditable))e.preventDefault();return}
+    if(e.altKey||e.shiftKey||target.isContentEditable||target.closest('[role="listbox"],[role="menu"]'))return;
+    if(!shortcut&&(!target.matches('input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"])')||target.classList.contains("sub-add")))return;
+    e.preventDefault();if(overlayState.busy||!writable()||node.querySelector(".discard-notice"))return;
+    var state=overlayState;
+    target.blur();if(overlayState!==state)return;
+    if(shortcut)Array.from(node.querySelectorAll("input")).forEach(function(entry){if(entry.isConnected&&entry.commitForSave)entry.commitForSave()});
+    if(overlayState!==state)return;
+    if(save.disabled){var invalid=node.querySelector("input:invalid,textarea:invalid,select:invalid");if(invalid){focusWithoutScroll(invalid);invalid.reportValidity()}return}
+    save.click();
+  });
+}
+function keyboardCommit(control,host){
+  control.addEventListener("keydown",function(e){
+    if(e.key!=="Enter"||e.isComposing||e.keyCode===229||e.repeat||e.ctrlKey||e.metaKey||e.altKey||e.shiftKey)return;
+    e.preventDefault();var state=overlayState,key=returnFocusKey(control);control.blur();if(overlayState===state)focusWithoutScroll(findReturnFocus(host,key));
+  });
+}
 document.addEventListener("keydown",function(e){
+  if(e.isComposing||e.keyCode===229)return;
+  if(e.key==="Enter"&&e.repeat&&!e.target.matches("textarea")&&!e.target.isContentEditable){e.preventDefault();return}
   if(e.key==="Escape"){if(!$("account-menu").hidden){closeAccount();$("who").focus()}else closeOverlay();return}
   if(e.key==="Tab"&&overlayState){
     var items=Array.from(overlayState.node.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary,[tabindex="0"]')).filter(function(n){return n.getClientRects().length});
@@ -1848,7 +1875,7 @@ function openTeamMember(member,onSaved){
   var ui=actionDialog(member?"Edit team member":"Add team member","Create an assignable person. They do not need to sign in, and this does not send an invitation."),name=input("text",member?member.name:"","Full name"),role=input("text",member?member.role:"","e.g. Video editor"),email=input("email",member?member.email:"","name@nprep.in");name.maxLength=100;role.maxLength=80;email.maxLength=200;
   ui.body.appendChild(field("Name *",name));ui.body.appendChild(field("Role (optional)",role));ui.body.appendChild(field("Email (optional)",email,"If this email later signs in with an allowed account, their existing assignments appear in My work."));
   var save=el("button","btn btn-p",member?"Save member":"Add member");function validate(){save.disabled=!name.value.trim()||!email.checkValidity()};[name,role,email].forEach(function(n){n.oninput=validate});
-  save.onclick=function(){validate();if(save.disabled)return;runDialogSave(ui,save,function(){return storeTeamMember({name:name.value,email:email.value,role:role.value},member)},function(saved){if(onSaved)onSaved(saved);toast(member?"Team member updated":"Team member added")})};ui.foot.appendChild(save);validate();overlay(ui.node,function(){return name.value!==(member?member.name:"")||role.value!==(member?member.role:"")||email.value!==(member?member.email:"")},true);
+  save.onclick=function(){validate();if(save.disabled)return;runDialogSave(ui,save,function(){return storeTeamMember({name:name.value,email:email.value,role:role.value},member)},function(saved){if(onSaved)onSaved(saved);toast(member?"Team member updated":"Team member added")})};ui.foot.appendChild(save);validate();keyboardSave(ui.node,save);overlay(ui.node,function(){return name.value!==(member?member.name:"")||role.value!==(member?member.role:"")||email.value!==(member?member.email:"")},true);
 }
 function openTeamMembers(){
   if(!writable())return;var ui=actionDialog("Team members","Add people before they sign in, then assign campaigns, tasks or subtasks to them."),list=el("div","team-directory"),search=input("search","","Search team members…");search.setAttribute("aria-label","Search team members");ui.body.insertBefore(search,ui.error);ui.body.insertBefore(list,ui.error);
@@ -1865,6 +1892,7 @@ function ownerPicker(current,onPick){
   else if(current)inp.value="Teammate";
   box.appendChild(inp);
   function shut(){if(menu){menu.remove();menu=null}inp.setAttribute("aria-expanded","false")}
+  function closeAndFocus(){suppressQuery=true;shut();focusWithoutScroll(inp);suppressQuery=false}
   function show(list){
     shut();
     menu=el("div","ac-menu");menu.id="owner-list-"+(++fieldCount);menu.setAttribute("role","listbox");menu.setAttribute("aria-label","Teammates");
@@ -1873,11 +1901,11 @@ function ownerPicker(current,onPick){
     list.sort(function(a,b){return a.id===(S.me&&S.me.id)?-1:b.id===(S.me&&S.me.id)?1:0});
     list.forEach(function(p){
       var b=el("button",null,(p.label||p.name||"Someone")+(p.id===(S.me&&S.me.id)?" (you)":""));b.type="button";b.setAttribute("role","option");b.setAttribute("aria-selected",String(current===p.id));
-      b.onclick=function(){current=p.id;inp.value=p.label||p.name||"Someone";S.profiles[p.id]={name:p.label||p.name||""};onPick(p.id);shut()};
+      b.setAttribute("data-owner-option",p.id);b.onclick=function(){current=p.id;inp.value=p.label||p.name||"Someone";S.profiles[p.id]={name:p.label||p.name||""};onPick(p.id);closeAndFocus()};
       menu.appendChild(b);
     });
     var cb=el("button",null,"Leave unassigned");cb.type="button";cb.setAttribute("role","option");cb.setAttribute("aria-selected",String(!current));
-    cb.onclick=function(){current="";inp.value="";onPick("");shut()};
+    cb.onclick=function(){current="";inp.value="";onPick("");closeAndFocus()};
     menu.appendChild(cb);
     var addPerson=el("button",null,"+ Add team member");addPerson.type="button";addPerson.disabled=!S.membersReady;addPerson.onclick=function(){shut();openTeamMember(null,function(saved){var id=ownerIdentity(saved.id),person=S.team.find(function(p){return p.id===id});current=id;inp.value=person?person.label:saved.name;onPick(id)})};menu.appendChild(addPerson);
     box.appendChild(menu);
@@ -1893,7 +1921,7 @@ function ownerPicker(current,onPick){
   }
   inp.onfocus=function(){if(!suppressQuery)query("")};
   inp.oninput=function(){query(inp.value)};
-  inp.onkeydown=function(e){if(e.key==="ArrowDown"&&menu){e.preventDefault();menu.querySelector("button").focus()}if(e.key==="Escape"){e.stopPropagation();shut()}};
+  inp.onkeydown=function(e){if(e.isComposing||e.keyCode===229||e.repeat)return;if(e.key==="ArrowDown"&&menu){e.preventDefault();menu.querySelector("button").focus()}if(e.key==="Enter"&&menu){e.preventDefault();var match=menu.querySelector("[data-owner-option]");if(match)match.click()}if(e.key==="Escape"){e.stopPropagation();shut()}};
   box.addEventListener("focusout",function(){setTimeout(function(){if(!box.contains(document.activeElement))shut()},180)});
   if(!U||!U.search){inp.disabled=true;inp.placeholder="Team directory unavailable"}
   return box;
@@ -1946,7 +1974,7 @@ function openSubtask(a,s,onSaved,focusDeadline){
       editingState.busy=false;saving=false;validate();save.textContent="Save subtask";cancel.disabled=false;close.disabled=false;body.querySelectorAll("input,textarea,select,button").forEach(function(control){control.disabled=false});drawNudge();err.textContent=e.userMessage||msgFor(e);err.hidden=false;
     });
   };
-  clear($("toasts"));validate();overlay(dialog,function(){return JSON.stringify(draft)!==JSON.stringify(original)||selected.length>0},true);
+  clear($("toasts"));validate();keyboardSave(dialog,save);overlay(dialog,function(){return JSON.stringify(draft)!==JSON.stringify(original)||selected.length>0},true);
 }
 
 /* ─── activity panel ────────────────────────────────────── */
@@ -2131,6 +2159,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
         r.appendChild(completionControl(a,s,function(saved){a.subtasks=saved.subtasks;drawSubs(null)}));
         var ti=input("text",s.title);ti.className="ps-title"+(nodeDone(raw)?" done":"");
         ti.placeholder="Name this item…";ti.setAttribute("data-pfocus","t"+s.id);
+        keyboardCommit(ti,sbox);
         ti.onchange=function(){
           var v=ti.value.trim();
           if(!v){ti.value=s.title;toast("Give this item a name, or use Remove to delete it.");return}
@@ -2165,10 +2194,11 @@ function openActivity(a,presetDate,presetCampaign,preset){
         kd.onchange=function(){patchSub(s.id,{kind:kd.value})};
         var dd=input("date",s.due||"");dd.className="ps-date";dd.setAttribute("data-focus-key","inline-deadline:"+a.id+":"+s.id);
         dd.title="Due date for this item";
+        keyboardCommit(dd,sbox);
         dd.onchange=function(){patchSub(s.id,{due:dd.value})};
         var op=ownerPicker(s.owner,function(id){patchSub(s.id,{owner:id})});
         op.classList.add("ps-own");
-        var deadlineField=field("Deadline",dd);deadlineField.classList.add("ps-deadline");var clock=input("time",s.dueTime||"");clock.step="60";clock.className="ps-time";clock.setAttribute("data-focus-key","inline-due-time:"+a.id+":"+s.id);clock.onchange=function(){if(!validDueTime(clock.value)||!clock.checkValidity()){toast("Choose a valid due time.");return}patchSub(s.id,{dueTime:clock.value})};var timeField=field("Due time",clock);timeField.classList.add("ps-due-time");
+        var deadlineField=field("Deadline",dd);deadlineField.classList.add("ps-deadline");var clock=input("time",s.dueTime||"");clock.step="60";clock.className="ps-time";clock.setAttribute("data-focus-key","inline-due-time:"+a.id+":"+s.id);clock.onchange=function(){if(!validDueTime(clock.value)||!clock.checkValidity()){toast("Choose a valid due time.");return}patchSub(s.id,{dueTime:clock.value})};keyboardCommit(clock,sbox);var timeField=field("Due time",clock);timeField.classList.add("ps-due-time");
         two.appendChild(pf2);two.appendChild(kd);two.appendChild(deadlineField);two.appendChild(timeField);two.appendChild(op);
         r.appendChild(two);
         sbox.appendChild(r);
@@ -2190,12 +2220,12 @@ function openActivity(a,presetDate,presetCampaign,preset){
       var ai=el("input");ai.type="text";ai.className="sub-add";
       ai.placeholder="+ Add an item and press Enter";
       ai.setAttribute("data-pfocus","add");
+      function addTypedItem(suggest){var v=ai.value.trim();if(!v)return;var fresh=newNode(v,"");a.subtasks=(a.subtasks||[]).concat([fresh]);
+        persistSubs(a).then(function(){if(suggest)offerSubtaskSop(a,fresh.id,function(saved){a.subtasks=saved.subtasks;drawSubs(null)})});render();drawSubs(suggest?"add":null)}
+      ai.commitForSave=function(){addTypedItem(false)};
       ai.onkeydown=function(e){
-        if(e.key!=="Enter")return;
-        e.preventDefault();
-        var v=ai.value.trim();if(!v)return;
-        var fresh=newNode(v,"");a.subtasks=(a.subtasks||[]).concat([fresh]);
-        persistSubs(a).then(function(){offerSubtaskSop(a,fresh.id,function(saved){a.subtasks=saved.subtasks;drawSubs(null)})});render();drawSubs("add");
+        if(e.key!=="Enter"||e.isComposing||e.repeat||e.ctrlKey||e.metaKey||e.altKey||e.shiftKey)return;
+        e.preventDefault();addTypedItem(true);
       };
       sbox.appendChild(ai);
       if(writable()){
@@ -2310,7 +2340,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
       saveActivityWithSops(a.id,payload,d.selectedSopIds).then(function(){closeOverlay(true);toast("Changes saved")}).catch(showErr);
     }
   }
-  validate();
+  validate();keyboardSave(p,save);
   overlay(p,function(){return JSON.stringify(d)!==initial});
 }
 
@@ -2504,7 +2534,7 @@ function openCampaign(c,afterCreate){
   var foot=el("div","p-foot");
   var requiredNote=el("p","required-note");foot.appendChild(requiredNote);
   var err=el("div","hint err");err.hidden=true;body.appendChild(err);
-  var save=el("button","btn btn-p sp",isNew?"Create campaign":"Save changes");
+  var save=el("button","btn btn-p sp",isNew?"Create campaign":"Save changes"),saving=false;
   if(!isNew&&canDeleteTasks()){
     var n=S.activities.filter(function(a){return a.campaignId===c.id}).length;
     var del=el("button","btn btn-d","Delete"),crow=null;
@@ -2536,16 +2566,18 @@ function openCampaign(c,afterCreate){
     var bad=d.endDate&&d.startDate&&d.endDate<d.startDate;
     derr.hidden=!bad;
     if(bad)derr.textContent="End date can't be before the start date.";
-    save.disabled=!(d.name.trim()&&d.startDate&&d.endDate)||bad;
+    save.disabled=saving||!(d.name.trim()&&d.startDate&&d.endDate)||bad;
     requiredNote.textContent=save.disabled?"Add a campaign name and valid dates to continue.":isNew?"Next: add activities to your campaign.":"Changes apply to this campaign.";
     return !save.disabled;
   }
   function submit(){
     if(!validate())return;
+    saving=true;var editingState=overlayState;editingState.busy=true;
     save.disabled=true;save.textContent="Saving…";err.hidden=true;
     var payload={name:d.name.trim(),goal:d.goal.trim(),startDate:d.startDate,endDate:d.endDate,
       owner:d.owner,status:d.status};
     var done=function(ref){
+      editingState.busy=false;
       closeOverlay(true);
       if(isNew){
         var created=Object.assign({id:ref.id},payload);
@@ -2555,7 +2587,7 @@ function openCampaign(c,afterCreate){
       }
       toast(isNew?"Campaign created. Add your first video or activity below.":"Campaign updated");
     };
-    var fail=function(e){err.hidden=false;err.textContent=msgFor(e);save.disabled=false;save.textContent=isNew?"Create campaign":"Save changes"};
+    var fail=function(e){saving=false;editingState.busy=false;err.hidden=false;err.textContent=msgFor(e);validate();save.textContent=isNew?"Create campaign":"Save changes"};
     if(isNew){
       payload.colour=CCOLORS[S.campaigns.length%CCOLORS.length];
       payload.createdAt=new Date().toISOString();
@@ -2564,7 +2596,7 @@ function openCampaign(c,afterCreate){
       db.doc("campaigns/"+c.id).update(payload).then(done).catch(fail);
     }
   }
-  validate();
+  validate();keyboardSave(m,save);
   overlay(m,function(){return JSON.stringify(d)!==initial});
 }
 
