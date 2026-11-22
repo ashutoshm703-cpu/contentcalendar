@@ -185,7 +185,7 @@ textarea{resize:vertical;min-height:76px;font-weight:300;line-height:1.6}
 .cgroup-b{display:flex;flex-direction:column;gap:6px}
 .cgroup .subs{margin:2px 0 8px 10px}
 .work-scope{display:flex;gap:3px;padding:3px;background:var(--surface-2);border:1px solid var(--line);border-radius:9px}.work-scope button{padding:8px 12px;border-radius:6px;font-size:12px;font-weight:500;color:var(--text-2)}.work-scope button.on{background:var(--surface);color:var(--brand);box-shadow:var(--sh-1)}
-.work-card{display:flex;align-items:flex-start;gap:8px;min-width:0;margin:5px 0}.work-card>.work-complete{flex:none;margin-top:10px}.work-card>.chip{flex:1;min-width:0}.work-card.is-done .chip .t{text-decoration:line-through;opacity:.65}.work-complete[aria-checked="true"]{background:var(--brand);border-color:var(--brand);color:#fff}.work-complete[aria-checked="true"] i{opacity:1}.work-card .work-date{margin-left:auto;color:var(--text-2)}.work-context{font-size:12px;font-weight:500;color:var(--text-2);padding:9px 0;text-align:left}.focus-activity{margin-bottom:10px}.work-day-title{font-size:16px;padding:12px 0}.work-day{margin-bottom:16px}.work-overdue>summary{cursor:pointer;margin-bottom:0}.work-overdue[open]>summary{margin-bottom:12px}.work-overdue>.hint{font-size:12px;margin-bottom:10px}.inherited-date{display:block;font-size:9px;line-height:1.5;color:var(--text-3)}.sub-deadline.inherited{min-width:50px}.cell .work-card .chip{font-size:11px}.cell .work-card>.work-complete{width:22px;height:22px;margin-top:8px}.work-subtask .m{overflow-wrap:anywhere}
+.work-card{display:flex;align-items:flex-start;gap:8px;min-width:0;margin:5px 0}.work-card>.work-complete{flex:none;margin-top:10px}.work-card>.chip{flex:1;min-width:0}.work-card.is-done .chip .t{text-decoration:line-through;opacity:.65}.work-complete[aria-checked="true"]{background:var(--brand);border-color:var(--brand);color:#fff}.work-complete[aria-checked="true"] i{opacity:1}.work-card .work-date{margin-left:auto;color:var(--text-2)}.work-context{font-size:12px;font-weight:500;color:var(--text-2);padding:9px 0;text-align:left}.focus-activity{margin-bottom:10px}.work-day-title{font-size:16px;padding:12px 0}.work-day{margin-bottom:16px}.work-overdue>summary{cursor:pointer;margin-bottom:0}.work-overdue[open]>summary{margin-bottom:12px}.work-overdue>.hint{font-size:12px;margin-bottom:10px}.cell .work-card .chip{font-size:11px}.cell .work-card>.work-complete{width:22px;height:22px;margin-top:8px}.work-subtask .m{overflow-wrap:anywhere}
 .focus-checklist-bar{display:flex;align-items:center;justify-content:space-between;gap:8px 14px;flex-wrap:wrap;padding:4px 3px 10px}.focus-checklist-bar .hint{font-size:11px;line-height:1.6}.focus-checklist-bar .text-button{font-size:12px;padding:6px 0;flex:none}
 .focus-full-checklist{padding:10px 12px 8px;margin-bottom:12px;border:1px solid var(--line);border-radius:8px}.focus-full-checklist>.hint{font-size:11px;line-height:1.7;margin-bottom:8px}.focus-full-checklist .subs{margin-left:0}
 .frow{display:flex;align-items:center;gap:11px}
@@ -271,7 +271,7 @@ textarea{resize:vertical;min-height:76px;font-weight:300;line-height:1.6}
 .sub-title-button:hover{color:var(--text);text-decoration:underline;text-underline-offset:3px}
 .sub-edit{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;color:var(--text-2);border:1px solid var(--line);border-radius:6px;padding:0;flex:none;background:var(--surface)}
 .sub-edit:hover{background:var(--ice);color:var(--text)}
-.sub-deadline{display:inline-flex;align-items:center;justify-content:flex-start;flex:none;width:48px;min-height:28px;padding:4px 0;border:0;border-radius:4px;background:transparent;color:var(--text-3);font-size:11px;font-weight:500;line-height:1.4;text-align:left;font-variant-numeric:tabular-nums}
+.sub-deadline{display:inline-flex;align-items:center;justify-content:flex-start;flex:none;width:auto;min-width:48px;white-space:nowrap;min-height:28px;padding:4px 0;border:0;border-radius:4px;background:transparent;color:var(--text-3);font-size:11px;font-weight:500;line-height:1.4;text-align:left;font-variant-numeric:tabular-nums}
 button.sub-deadline:hover{background:var(--ice);color:var(--text)}
 .sub-deadline.unset{border-style:dashed;color:var(--text-3)}
 .sub-deadline.overdue{color:var(--danger);background:var(--danger-soft);border-color:transparent}
@@ -563,7 +563,7 @@ button:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid var
 .focus-activity .work-card .t{font-size:14px;line-height:1.5}
 .work-subtask .t::before{display:none}
 .work-subtask .m{padding-left:0;font-size:11px;color:var(--text-2);gap:6px 10px}
-.work-card .inherited-date{font-size:10px;color:var(--text-2)}
+
 .work-subtask .uid{font-size:11px;font-weight:400}
 .work-card .work-date{font-size:11px}
 @media(max-width:720px){

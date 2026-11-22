@@ -81,9 +81,11 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
 - Saving a task/subtask deadline closes its popup and keeps the page position,
   expanded groups and parent editor position. Live data updates preserve scroll
   and return focus to the matching control after the list redraws.
-- Every displayed subtask shows its explicit or inherited deadline, or **Set
-  deadline** when no parent date exists. Select the deadline to edit it; overdue deadlines are
-  highlighted until the item is complete.
+- Checklist rows show only explicitly set subtask deadlines. Inherited dates
+  and inheritance labels stay hidden while still controlling calendar placement.
+  Use the subtask name or pencil to set a separate deadline; clearing it restores
+  inheritance. A missing parent date still offers **Set deadline**. Explicit dates
+  can be selected to edit and are highlighted when overdue.
 - **SOP library** is the single place to create and reuse checklists. Every SOP
   has a unique name, one shared checklist and up to 20 alternative conditions.
   Each condition has a platform, content format and optional topic/category.
