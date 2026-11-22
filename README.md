@@ -81,11 +81,16 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
 - Saving a task/subtask deadline closes its popup and keeps the page position,
   expanded groups and parent editor position. Live data updates preserve scroll
   and return focus to the matching control after the list redraws.
-- Checklist rows show only explicitly set subtask deadlines. Inherited dates
-  and inheritance labels stay hidden while still controlling calendar placement.
-  Use the subtask name or pencil to set a separate deadline; clearing it restores
-  inheritance. A missing parent date still offers **Set deadline**. Explicit dates
-  can be selected to edit and are highlighted when overdue.
+- Checklist rows show the due date, including a date inherited from a parent,
+  without an “Inherited” label. Use the subtask name, date or pencil to edit the
+  deadline; clearing a separate date restores inheritance. A missing parent date
+  still offers **Set deadline**. Overdue dates are highlighted until completion.
+- Tasks, groups and nested subtasks support an optional **Due time**. Set it in
+  task/subtask details or the activity checklist's inline Due time field. Set
+  times stay visible in the row/header when collapsed and in Today, Next 7 days,
+  Week, Month and Campaigns. Times are independent at each level; blank times
+  stay unspecified. Duplicating or repeating work retains its set times, and
+  completing work preserves its saved checklist sequence.
 - **SOP library** is the single place to create and reuse checklists. Every SOP
   has a unique name, one shared checklist and up to 20 alternative conditions.
   Each condition has a platform, content format and optional topic/category.
@@ -236,7 +241,7 @@ Collections:
 - `campaigns/{id}` — name, goal, startDate, endDate, owner, status, colour
 - `activities/{id}` — campaignId, title, type, angle, cta, platforms[],
   dueDate, dueTime, owner, status, description, keywords[], script,
-  subtasks[] (nested, each with platform, kind, owner, due, children[])
+  subtasks[] (nested, each with platform, kind, owner, due, dueTime, children[])
 - `users/{uid}` — written on sign-in so owner pickers show real names
 - `subtaskTemplates/{id}` — legacy saved groups. They appear in the SOP library;
   editing one writes an SOP and stores its ID in `sopId`. New group creation is

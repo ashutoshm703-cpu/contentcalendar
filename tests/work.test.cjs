@@ -5,7 +5,7 @@ const context={document:{addEventListener(){},getElementById(){return {}}},windo
 vm.createContext(context);
 vm.runInContext(source.slice(0,source.indexOf('(function boot(){')).replace(/^render\(\);$/m,'')+`
 render=function(){};toast=function(){};
-globalThis.api={S,effectiveWork,workItems,workByDay,visible,scopedNodes,scheduledNodes,groupedWork,saveCompletion,appendAiChecklist,aiWorkRequest,buildTeamDirectory,rebuildTeamDirectory,storeTeamMember,ownerIdentity,foldAllWork,restoreWorkFolds,canDeleteTasks,setDB(value){db=value}};
+globalThis.api={S,effectiveWork,workItems,workByDay,visible,scopedNodes,scheduledNodes,groupedWork,saveCompletion,saveSubtaskWithSops,copyNodes,validDueTime,appendAiChecklist,aiWorkRequest,buildTeamDirectory,rebuildTeamDirectory,storeTeamMember,ownerIdentity,foldAllWork,restoreWorkFolds,canDeleteTasks,setDB(value){db=value}};
 })();`,context);
 const {api}=context,{S}=api;
 assert.equal(S.workScope,'my');S.me={id:'me'};
@@ -22,6 +22,10 @@ const activity={id:'video',title:'A nursing story',owner:'other',dueDate:'2099-0
   {id:'root-inherit',title:'Publish',children:[]}]};
 S.activities=[activity];
 let rows=api.effectiveWork(activity);assert.equal(rows[1].due,'2099-01-04');assert.equal(rows[1].owner,'me');assert.equal(rows[1].parentDue,'2099-01-04');
+for(const time of ['', '00:00', '09:05', '12:00', '23:59'])assert.equal(api.validDueTime(time),true);
+for(const time of ['24:00','09:60','9:05','noon'])assert.equal(api.validDueTime(time),false);
+const timed={...activity,dueTime:'18:00',subtasks:[{...activity.subtasks[0],dueTime:'09:00'}]};
+assert.equal(api.effectiveWork(timed)[0].dueTime,'09:00');assert.equal(api.effectiveWork(timed)[1].dueTime,'');assert.equal(api.copyNodes(timed.subtasks,7)[0].dueTime,'09:00');
 assert.equal(rows[2].due,'2099-01-03');assert.equal(rows[3].due,'2099-01-06');
 assert.deepEqual(Array.from(api.workItems(),r=>r.id),['inherit']);assert.equal(api.visible().length,1);
 assert.deepEqual(Array.from(api.scopedNodes(activity,activity.subtasks)[0].children,n=>n.id),['inherit']);
@@ -64,6 +68,11 @@ console.log('PASS: My work default; descendant ownership; nearest-parent deadlin
   await api.saveCompletion(activity,null,true);assert.equal(stored.status,'Published');assert.equal(stored.subtasks[1].done,undefined);
   await api.saveCompletion(activity,null,false);assert.equal(stored.status,'Ready');
   fail=true;await assert.rejects(api.saveCompletion(activity,'root-inherit',true));assert.equal(stored.subtasks[1].done,undefined);assert.equal(S.completing['video:root-inherit'],undefined);
+  fail=false;await api.saveSubtaskWithSops(activity,'phase',{dueTime:'09:15'},[]);assert.equal(stored.subtasks[0].dueTime,'09:15');
+  await api.saveSubtaskWithSops(activity,'inherit',{dueTime:'00:00'},[]);assert.equal(stored.subtasks[0].children[0].dueTime,'00:00');assert.equal(stored.subtasks[0].children[0].due,'');assert.equal(stored.subtasks.at(-1).id,'concurrent');
+  await assert.rejects(api.saveSubtaskWithSops(activity,'inherit',{dueTime:'24:00'},[]));assert.equal(stored.subtasks[0].children[0].dueTime,'00:00');
+  await api.saveSubtaskWithSops(activity,'inherit',{dueTime:''},[]);assert.equal(stored.subtasks[0].children[0].dueTime,'');assert.equal(stored.subtasks[0].dueTime,'09:15');
+  console.log('PASS: optional due-time validation; independent times at each level; midnight; transactional save/clear; concurrent work and copied times preserved');
   console.log('PASS: transactional leaf/group/task completion; independent publication; concurrent sibling preservation; failed-save recovery');
   S.members=[];S.userRoster=[{id:'me',name:'My account',email:'me@nprep.in'}];api.rebuildTeamDirectory();
   const records=new Map();let transactionQueue=Promise.resolve(),sequence=0,failMember=false;

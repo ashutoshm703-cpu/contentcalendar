@@ -127,6 +127,8 @@ function parseISO(s){var p=String(s||"").split("-");return new Date(+p[0],(+p[1]
 function fmtShort(s){if(!s)return"";var d=parseISO(s);return d.getDate()+" "+MONTHS[d.getMonth()].slice(0,3)}
 function fmtLong(s){if(!s)return"";var d=parseISO(s);return d.getDate()+" "+MONTHS[d.getMonth()].slice(0,3)+" "+d.getFullYear()}
 function fmtTime(t){if(!t)return"";var p=t.split(":"),h=+p[0],ap=h>=12?"pm":"am",hh=h%12||12;return hh+(p[1]!=="00"?":"+p[1]:"")+ap}
+function validDueTime(t){return typeof t==="string"&&(t===""||/^([01]\d|2[0-3]):[0-5]\d$/.test(t))}
+function dueTimeBadge(t){var badge=el("span","due-time","Due "+fmtTime(t));badge.title="Due at "+fmtTime(t);return badge}
 function addDays(s,n){var d=parseISO(s);d.setDate(d.getDate()+n);return iso(d)}
 function weekBounds(){var d=new Date(),off=(d.getDay()+6)%7;d.setDate(d.getDate()-off);var a=iso(d);d.setDate(d.getDate()+6);return[a,iso(d)]}
 function daysBetween(a,b){return Math.round((parseISO(b)-parseISO(a))/86400000)}
@@ -172,14 +174,14 @@ function visible(){
   });
 }
 function effectiveWork(a){
-  var out=[];function walk(nodes,parent,path,depth){(nodes||[]).forEach(function(n){var row={a:a,n:n,id:n.id,title:n.title,due:n.due||parent.due||"",owner:ownerIdentity(n.owner||parent.owner||""),inheritedDue:!n.due,parentDue:parent.due||"",source:n.due?n.title:parent.source,done:nodeDone(n),path:path.join(" → "),depth:depth};out.push(row);walk(kids(n),{due:row.due,owner:row.owner,source:row.source},path.concat(n.title),depth+1)})}
+  var out=[];function walk(nodes,parent,path,depth){(nodes||[]).forEach(function(n){var row={a:a,n:n,id:n.id,title:n.title,due:n.due||parent.due||"",dueTime:n.dueTime||"",owner:ownerIdentity(n.owner||parent.owner||""),inheritedDue:!n.due,parentDue:parent.due||"",source:n.due?n.title:parent.source,done:nodeDone(n),path:path.join(" → "),depth:depth};out.push(row);walk(kids(n),{due:row.due,owner:row.owner,source:row.source},path.concat(n.title),depth+1)})}
   walk(a.subtasks,{due:a.dueDate||"",owner:a.owner||"",source:a.title},[],0);return out;
 }
 function workOwner(){return S.workScope==="my"?(S.me&&S.me.id)||"__signed_out__":S.filters.owner||""}
 function ownerInScope(owner){var expected=workOwner();return !expected||ownerIdentity(owner)===ownerIdentity(expected)}
 function activityInWorkScope(a){return ownerInScope(a.owner||"")||effectiveWork(a).some(function(row){return ownerInScope(row.owner)})}
 function workItems(list){var out=[];(list||visible()).forEach(function(a){
-  if(ownerInScope(a.owner||""))out.push({a:a,n:null,id:"activity:"+a.id,title:a.title,due:a.dueDate||"",owner:ownerIdentity(a.owner||""),done:a.status==="Published",path:"",depth:-1,inheritedDue:false});
+  if(ownerInScope(a.owner||""))out.push({a:a,n:null,id:"activity:"+a.id,title:a.title,due:a.dueDate||"",dueTime:a.dueTime||"",owner:ownerIdentity(a.owner||""),done:a.status==="Published",path:"",depth:-1,inheritedDue:false});
   effectiveWork(a).forEach(function(row){if(!kids(row.n).length&&ownerInScope(row.owner))out.push(row)});
 });return out}
 function workByDay(list){var map={};workItems(list).forEach(function(row){if(row.due)(map[row.due]=map[row.due]||[]).push(row)});return map}
@@ -397,7 +399,7 @@ function completionControl(a,n,onSaved){
 function workCard(row){
   var wrap=el("div","work-card"+(row.done?" is-done":""));wrap.setAttribute("data-work-id",row.n?row.a.id+":"+row.id:"activity:"+row.a.id);wrap.appendChild(completionControl(row.a,row.n));
   if(!row.n)wrap.appendChild(chip(row.a));else{var button=el("button","chip work-subtask"),title=el("span","t",row.title),meta=el("div","m");button.setAttribute("data-focus-key","work:"+row.a.id+":"+row.id);button.setAttribute("aria-label","Edit subtask: "+row.title);button.appendChild(title);meta.appendChild(el("span",null,row.a.title));if(row.path)meta.appendChild(el("span",null,row.path));if(row.owner)meta.appendChild(uname(row.owner));button.appendChild(meta);button.onclick=function(){openSubtask(row.a,row.n)};wrap.appendChild(button)}
-  var meta=wrap.querySelector(".chip .m");if(meta){if(!row.n)meta.appendChild(row.owner?uname(row.owner):el("span",null,"Unassigned"));if(row.due&&!row.inheritedDue)meta.appendChild(el("span","work-date",fmtShort(row.due)))}return wrap;
+  var meta=wrap.querySelector(".chip .m");if(meta){if(!row.n)meta.appendChild(row.owner?uname(row.owner):el("span",null,"Unassigned"));if(row.due)meta.appendChild(el("span","work-date",fmtShort(row.due)));if(row.n&&row.dueTime)meta.appendChild(dueTimeBadge(row.dueTime))}return wrap;
 }
 /* Date/owner filters select work, while its original ancestors provide context. */
 function scheduledNodes(a,rows){
@@ -434,7 +436,7 @@ function workGroup(entry,options){
   var hasChecklist=rows.some(function(row){return !!row.n})||(options.focus&&leaves(scopedNodes(a,a.subtasks)).length);if(hasChecklist)headRow.appendChild(workFoldButton("task",a.id,a.title,body));
   if(root)headRow.appendChild(workCard(root));else{
     var context=el("button","work-parent-context"),title=el("span","work-parent-title",a.title),meta=el("span","work-parent-meta",a.status+" · "+(a.dueDate?"Video deadline "+fmtShort(a.dueDate):"No video deadline"));
-    context.setAttribute("aria-label","Open parent task: "+a.title);context.setAttribute("data-focus-key","activity:"+a.id);context.appendChild(title);context.appendChild(meta);context.onclick=function(){openActivity(a)};headRow.appendChild(context);
+    context.setAttribute("aria-label","Open parent task: "+a.title);context.setAttribute("data-focus-key","activity:"+a.id);context.appendChild(title);context.appendChild(meta);if(a.dueTime)context.appendChild(dueTimeBadge(a.dueTime));context.onclick=function(){openActivity(a)};headRow.appendChild(context);
   }
   heading.appendChild(headRow);if(hasChecklist)heading.appendChild(el("p","work-group-step-count",rows.filter(function(row){return !!row.n}).length+" steps in this view"));group.appendChild(heading);
   function tree(nodes){var list=el("ul","work-children");nodes.forEach(function(n){var raw=nodeById(a.subtasks,n.id)||n,row=selected[n.id],branch=kids(n).length>0,item=el("li","work-tree-item"),line=el("div","work-tree-row"+(row?" work-card":" work-branch")+(nodeDone(raw)?" is-done":""));item.setAttribute("data-work-node",n.id);
@@ -442,7 +444,7 @@ function workGroup(entry,options){
     var children=branch?tree(kids(n)):null;if(branch)line.appendChild(workFoldButton("group",n.id,n.title,children));
     if(row||(effective[n.id]&&ownerInScope(effective[n.id].owner)))line.appendChild(completionControl(a,raw));
     var content=el("div","work-tree-content"),name=el("button","work-task-title",n.title);name.setAttribute("aria-label","Edit subtask: "+n.title);name.setAttribute("data-focus-key","work:"+a.id+":"+n.id);name.onclick=function(){openSubtask(a,raw)};content.appendChild(name);
-    var meta=el("div","work-task-meta");if(branch){var counts=nodeCount(raw);meta.appendChild(el("span",null,counts[0]+" of "+counts[1]+" complete"))}else if(row){if(row.owner)meta.appendChild(uname(row.owner));if(row.due&&!row.inheritedDue){var date=el("span","work-date",fmtShort(row.due));date.title="Subtask deadline";meta.appendChild(date)}}
+    var meta=el("div","work-task-meta"),schedule=effective[n.id]||row;if(branch){var counts=nodeCount(raw);meta.appendChild(el("span",null,counts[0]+" of "+counts[1]+" complete"))}else if(row&&row.owner)meta.appendChild(uname(row.owner));if(schedule&&schedule.due){var date=el("span","work-date",fmtShort(schedule.due));date.title="Subtask deadline";meta.appendChild(date)}if(raw.dueTime)meta.appendChild(dueTimeBadge(raw.dueTime));
     if(meta.childNodes.length)content.appendChild(meta);line.appendChild(content);item.appendChild(line);if(branch)item.appendChild(children);list.appendChild(item);
   });return list}
   var full=options.focus&&!!S.expanded["focus-subs-"+a.id];if(!full){var nodes=scheduledNodes(a,rows);if(nodes.length)body.appendChild(tree(nodes))}
@@ -682,6 +684,7 @@ function renderCampaigns(main){
         var rm=el("button","row-main");rm.setAttribute("data-focus-key","activity:"+a.id);
         rm.appendChild(el("span","d",fmtShort(a.dueDate)));
         rm.appendChild(el("span","n",a.title));
+        if(a.dueTime)rm.appendChild(dueTimeBadge(a.dueTime));
         if(a.type||a.angle)
           rm.appendChild(el("span","row-ty",[a.type,a.angle].filter(Boolean).join(" · ")));
         if(a.script){var hs=el("span","has-script","≡");hs.title="Has a script";rm.appendChild(hs)}
@@ -717,7 +720,7 @@ function renderCampaigns(main){
 var wq=Promise.resolve();
 function sid(){return "s"+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
 function newNode(title,kind,plat){
-  return {id:sid(),title:title,description:"",done:false,owner:"",due:"",kind:kind||"",platform:plat||"",type:"",angle:"",children:[]};
+  return {id:sid(),title:title,description:"",done:false,owner:"",due:"",dueTime:"",kind:kind||"",platform:plat||"",type:"",angle:"",children:[]};
 }
 function nodeById(nodes,id){
   for(var i=0;i<(nodes||[]).length;i++){
@@ -734,11 +737,11 @@ function platPill(p){
   var s=el("span","sub-plat",platAbbr(p));s.title=p;return s;
 }
 function subtaskDeadline(a,s,onSaved){
-  var context=effectiveWork(a).find(function(row){return row.id===s.id}),due=context?context.due:s.due||a.dueDate||"",inherited=!s.due&&!!due,late=!!due&&due<TODAY&&!nodeDone(s);
-  if(inherited)return null;
+  var context=effectiveWork(a).find(function(row){return row.id===s.id}),due=context?context.due:s.due||a.dueDate||"",late=!!due&&due<TODAY&&!nodeDone(s);
   var date=due?(due.slice(0,4)===TODAY.slice(0,4)?fmtShort(due):fmtLong(due)):"";
   var deadline=el(writable()?"button":"span","sub-deadline"+(late?" overdue":"")+(!due?" unset":""),due?date:"Set deadline");
-  deadline.title=due?"Deadline: "+fmtLong(due)+(late?" · overdue":""):"No parent deadline set";deadline.setAttribute("data-focus-key","deadline:"+a.id+":"+s.id);
+  if(s.dueTime)deadline.appendChild(el("span","deadline-time",fmtTime(s.dueTime)));
+  deadline.title=due?"Deadline: "+fmtLong(due)+(s.dueTime?" · "+fmtTime(s.dueTime):"")+(late?" · overdue":""):"No parent deadline set";deadline.setAttribute("data-focus-key","deadline:"+a.id+":"+s.id);
   if(writable()){
     deadline.setAttribute("aria-label",(due?"Change deadline for ":"Set deadline for ")+(s.title||"Untitled subtask")+(due?": "+fmtLong(due):""));
     deadline.onclick=function(){openSubtask(a,s,onSaved,true)};
@@ -940,7 +943,7 @@ function sopNodes(rule){
   return stable(buildSteps(STEPS[(sopConditions(rule)[0]||{}).format]||["Script","Edit","Review"]),rule.id||"suggested");
 }
 function sopDefinition(nodes){return (nodes||[]).map(function(n){var copy=Object.assign({},n,{done:false,children:sopDefinition(kids(n))});delete copy.sopSource;delete copy.appliedSopRules;return copy})}
-var SOP_FIELDS=["title","description","due","kind","platform","type","angle"];
+var SOP_FIELDS=["title","description","due","dueTime","kind","platform","type","angle"];
 function sopBaseline(n){var out={};SOP_FIELDS.forEach(function(k){out[k]=n[k]||""});return out}
 function materializeSop(rule,date){
   var offset=rule.anchorDate&&date?daysBetween(rule.anchorDate,date):0;
@@ -1037,6 +1040,7 @@ function saveActivityWithSops(id,patch,selected){
   })});
 }
 function saveSubtaskWithSops(a,id,changes,selected,manual){
+  if(changes.dueTime!==undefined&&!validDueTime(changes.dueTime))return Promise.reject(Object.assign(new Error("Choose a valid due time."),{userMessage:"Choose a valid due time."}));
   return wq.then(function(){return db.runTransaction(function(tx){var ref=db.doc("activities/"+a.id);
     return tx.get(ref).then(function(snap){
       if(!snap.exists){var e=new Error();e.code="not-found";throw e}
@@ -1555,7 +1559,7 @@ function quickAdd(c){
   fs.onchange=function(){drawAngle(false);drawQuickSop()};
   drawAngle(true);drawQuickSop();
   function add(){
-    var t=ti.value.trim();if(!t||go.disabled)return;
+    var t=ti.value.trim();if(!t||go.disabled)return;if(!validDueTime(tm.value)||!tm.checkValidity()){toast("Choose a valid due time.");tm.focus();return}
     var f=formatById(fs.value),asel=angleBox.querySelector("select");
     var ang=asel?asel.value:"";
     S.lastAdd[c.id]={type:fs.value,angle:ang,date:dt.value,time:tm.value};
@@ -1909,7 +1913,7 @@ function subtaskEditButton(a,s,onSaved){
   edit.onclick=function(){openSubtask(a,s,onSaved)};return edit;
 }
 function openSubtask(a,s,onSaved,focusDeadline){
-  var original={title:s.title||"",description:s.description||"",owner:s.owner||"",due:s.due||"",platform:s.platform||"",kind:s.kind||"",type:s.type||"",angle:s.angle||""};
+  var original={title:s.title||"",description:s.description||"",owner:s.owner||"",due:s.due||"",dueTime:s.dueTime||"",platform:s.platform||"",kind:s.kind||"",type:s.type||"",angle:s.angle||""};
   var draft=Object.assign({},original),saving=false,selected=[],location=subtaskLocation(a,s.id),parent=location?location.parent:{platforms:a.platforms||[],type:a.type||"",angle:a.angle||""};
   var dialog=el("div","modal subtask-modal");dialog.setAttribute("role","dialog");dialog.setAttribute("aria-label","Edit subtask");
   var head=el("div","p-head");head.appendChild(el("h2",null,"Subtask details"));
@@ -1927,12 +1931,12 @@ function openSubtask(a,s,onSaved,focusDeadline){
   function drawTopic(){clear(topicWrap);var topic=sopTopicSelect(draft.type||parent.type,draft.angle,"Use parent topic");topic.onchange=function(){draft.angle=topic.value;drawNudge()};topicWrap.appendChild(field("Topic / category",topic))}
   platform.onchange=function(){draft.platform=platform.value;drawNudge()};format.onchange=function(){draft.type=format.value;draft.angle="";drawTopic();drawNudge()};drawTopic();drawNudge();
   var description=el("textarea","subtask-description-input");description.value=draft.description;description.rows=4;description.placeholder="Instructions, links or acceptance criteria…";description.oninput=function(){draft.description=description.value};body.appendChild(field("Description (optional)",description));
-  var planning=el("div","f2"),date=input("date",draft.due);if(focusDeadline)date.autofocus=true;date.oninput=function(){draft.due=date.value};var inherited=effectiveWork(a).find(function(row){return row.id===s.id});planning.appendChild(field("Deadline (optional)",date,"Set a date only if this subtask needs a separate deadline."));planning.appendChild(field("Owner (optional)",ownerPicker(draft.owner,function(id){draft.owner=id})));body.appendChild(planning);
+  var planning=el("div","f2"),date=input("date",draft.due),time=input("time",draft.dueTime);time.step="60";time.oninput=function(){draft.dueTime=time.value;validate()};if(focusDeadline)date.autofocus=true;date.oninput=function(){draft.due=date.value};var inherited=effectiveWork(a).find(function(row){return row.id===s.id});planning.appendChild(field("Deadline (optional)",date,"Set a date only if this subtask needs a separate deadline."));planning.appendChild(field("Due time (optional)",time,"Leave blank for any time on the due date."));planning.appendChild(field("Owner (optional)",ownerPicker(draft.owner,function(id){draft.owner=id})));body.appendChild(planning);
   var kind=dropdown(SUBKINDS.map(function(k){return[k,k]}),draft.kind,"Not set");kind.onchange=function(){draft.kind=kind.value};conditions.body.appendChild(field("Work type (optional)",kind,"The production step, such as Script, Edit or Thumbnail."));body.insertBefore(planning,conditions.node);body.insertBefore(description.parentElement,conditions.node);
   var err=el("p","hint err");err.hidden=true;err.setAttribute("role","alert");body.appendChild(err);
   var foot=el("div","p-foot");foot.appendChild(el("p","required-note","Save to update this subtask and add any selected SOP steps."));
   var cancel=el("button","btn btn-o","Cancel");cancel.onclick=closeOverlay;foot.appendChild(cancel);var save=el("button","btn btn-p sp","Save subtask");foot.appendChild(save);dialog.appendChild(foot);
-  function validate(){save.disabled=saving||!draft.title.trim()||!writable();return !save.disabled}
+  function validate(){save.disabled=saving||!draft.title.trim()||!validDueTime(draft.dueTime)||!time.checkValidity()||!writable();return !save.disabled}
   save.onclick=function(){
     if(!validate())return;var changes={};Object.keys(original).forEach(function(key){var value=key==="title"?draft[key].trim():draft[key];if(value!==original[key])changes[key]=value});
     if(!draft.due&&!(inherited&&inherited.parentDue)){err.textContent="Set the parent task deadline or choose a deadline here before saving.";err.hidden=false;return}if(!Object.keys(changes).length&&!selected.length){closeOverlay(true);return}
@@ -2050,12 +2054,12 @@ function openActivity(a,presetDate,presetCampaign,preset){
   var dd=input("date",d.dueDate);dd.id="act-date";
   var dt=input("time",d.dueTime);dt.id="act-time";
   dd.required=true;
-  var dw=field("Due date *",dd),tw=field("Time (optional)",dt,"Leave blank for any time that day.");
+  var dw=field("Due date *",dd),tw=field("Due time (optional)",dt,"Leave blank for any time that day.");
   two.appendChild(dw);two.appendChild(tw);
   body.appendChild(two);
   var rangeHint=el("div","hint warn");rangeHint.hidden=true;body.appendChild(rangeHint);
   dd.oninput=function(){d.dueDate=dd.value;if(repeatOptions)repeatOptions.refresh();validate()};
-  dt.oninput=function(){d.dueTime=dt.value};
+  dt.oninput=function(){d.dueTime=dt.value;validate()};
   var repeatOptions=null;
   if(isNew){
     var repeatSection=disclosure("Repeat activity","Create a daily, weekly or monthly series");
@@ -2164,8 +2168,8 @@ function openActivity(a,presetDate,presetCampaign,preset){
         dd.onchange=function(){patchSub(s.id,{due:dd.value})};
         var op=ownerPicker(s.owner,function(id){patchSub(s.id,{owner:id})});
         op.classList.add("ps-own");
-        var deadlineField=field("Deadline",dd);deadlineField.classList.add("ps-deadline");
-        two.appendChild(pf2);two.appendChild(kd);two.appendChild(deadlineField);two.appendChild(op);
+        var deadlineField=field("Deadline",dd);deadlineField.classList.add("ps-deadline");var clock=input("time",s.dueTime||"");clock.step="60";clock.className="ps-time";clock.setAttribute("data-focus-key","inline-due-time:"+a.id+":"+s.id);clock.onchange=function(){if(!validDueTime(clock.value)||!clock.checkValidity()){toast("Choose a valid due time.");return}patchSub(s.id,{dueTime:clock.value})};var timeField=field("Due time",clock);timeField.classList.add("ps-due-time");
+        two.appendChild(pf2);two.appendChild(kd);two.appendChild(deadlineField);two.appendChild(timeField);two.appendChild(op);
         r.appendChild(two);
         sbox.appendChild(r);
         if(S.placeFor===s.id&&depth<MAXDEPTH-1){
@@ -2275,7 +2279,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
     err.hidden=false;err.textContent=msgFor(e);validate();save.textContent=isNew?"Create activity":"Save changes";
   }
   function validate(){
-    var ok=d.title.trim()&&d.campaignId&&d.dueDate&&S.sopReady&&(!repeatOptions||repeatOptions.valid());
+    var ok=d.title.trim()&&d.campaignId&&d.dueDate&&validDueTime(d.dueTime)&&dt.checkValidity()&&S.sopReady&&(!repeatOptions||repeatOptions.valid());
     save.disabled=saving||!ok||!writable();
     var missing=[];if(!d.title.trim())missing.push("a title");if(!d.campaignId)missing.push("a campaign");if(!d.dueDate)missing.push("a due date");
     requiredNote.textContent=ok?(isNew?"Optional details can be added later.":"Save changes to update the details above."):"Add "+missing.join(", ")+" to continue.";

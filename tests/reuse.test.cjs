@@ -187,6 +187,10 @@ api.setDB({batch(){return {set(ref,value){writes.push({ref,value})},commit(){ret
   assert.equal(synced.subtasks.find(n=>n.title==='Remove unused').description,'Local instructions');assert.equal(synced.subtasks.find(n=>n.title==='Keep assigned').owner,'editor');
   const pristine=api.materializeSop(previous,'2026-11-26');
   assert.equal(api.reconcileSop(pristine,previous,updated,'2026-11-26').length,2);
+  const customTimes=api.materializeSop(previous,'2026-11-26');customTimes[0].children[0].dueTime='08:30';customTimes[2].dueTime='09:15';
+  const timedUpdate=structuredClone(updated);timedUpdate.nodes[0].children[0].dueTime='10:00';
+  const timedSync=api.reconcileSop(customTimes,previous,timedUpdate,'2026-11-26');assert.equal(timedSync[0].children[0].dueTime,'08:30');assert.equal(timedSync.find(n=>n.title==='Remove unused').dueTime,'09:15');
+  assert.equal(api.reconcileSop(pristine,previous,timedUpdate,'2026-11-26')[0].children[0].dueTime,'10:00');
   const independent=api.copyIndependentSubtask(pristine[0]);assert.equal(independent.sopSource,undefined);assert.equal(independent.children[0].sopSource,undefined);
   const innerRule={...previous,nodes:[previous.nodes[1]]},outerNodes=api.materializeSop(innerRule,'2026-11-26');
   outerNodes[0].appliedSopRules=['sync'];outerNodes[0].children=api.materializeSop(innerRule,'2026-11-26');

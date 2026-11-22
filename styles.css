@@ -271,7 +271,13 @@ textarea{resize:vertical;min-height:76px;font-weight:300;line-height:1.6}
 .sub-title-button:hover{color:var(--text);text-decoration:underline;text-underline-offset:3px}
 .sub-edit{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;color:var(--text-2);border:1px solid var(--line);border-radius:6px;padding:0;flex:none;background:var(--surface)}
 .sub-edit:hover{background:var(--ice);color:var(--text)}
-.sub-deadline{display:inline-flex;align-items:center;justify-content:flex-start;flex:none;width:auto;min-width:48px;white-space:nowrap;min-height:28px;padding:4px 0;border:0;border-radius:4px;background:transparent;color:var(--text-3);font-size:11px;font-weight:500;line-height:1.4;text-align:left;font-variant-numeric:tabular-nums}
+.sub-deadline{display:inline-flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;flex:none;width:auto;min-width:48px;white-space:nowrap;min-height:28px;padding:4px 0;border:0;border-radius:4px;background:transparent;color:var(--text-3);font-size:11px;font-weight:500;line-height:1.4;text-align:left;font-variant-numeric:tabular-nums}
+.deadline-time{font-size:10px;font-weight:500;color:var(--text-2);white-space:nowrap}
+.due-time{display:inline-block;align-self:flex-start;white-space:nowrap;font-size:11px;line-height:1.5;font-weight:500;color:var(--brand);background:var(--sky-soft);border-radius:5px;padding:2px 6px}
+.ps-due-time{flex:1 1 106px;min-width:0}.ps-due-time label{font-size:10px;margin-bottom:4px}.ps-due-time input.ps-time{width:100%;min-width:0;font-size:12px;padding:7px 9px;background:var(--surface)}
+.subtask-modal .f2>.field:last-child{grid-column:1/-1}
+.cell .due-time{font-size:10px;padding:2px 4px}
+.work-group .chip .tm{margin-left:0;padding:2px 6px;border-radius:5px;background:var(--sky-soft);color:var(--brand);font-size:11px;white-space:nowrap}
 button.sub-deadline:hover{background:var(--ice);color:var(--text)}
 .sub-deadline.unset{border-style:dashed;color:var(--text-3)}
 .sub-deadline.overdue{color:var(--danger);background:var(--danger-soft);border-color:transparent}
