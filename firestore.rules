@@ -95,6 +95,20 @@ service cloud.firestore {
         && request.resource.data.version == resource.data.version + 1;
     }
 
+    // Reusable weekly content mix, separate from campaigns and task completion.
+    match /workspaceSettings/weeklyPlanner {
+      allow read: if nprep();
+      function validPlan() {
+        let p = request.resource.data;
+        return p.keys().hasOnly(['version', 'cells', 'updatedAt', 'updatedBy'])
+          && p.version is int && p.cells is map && p.cells.size() == 56
+          && p.updatedAt is string && p.updatedBy == request.auth.uid;
+      }
+      allow create: if nprep() && validPlan() && request.resource.data.version == 1;
+      allow update: if nprep() && validPlan()
+        && request.resource.data.version == resource.data.version + 1;
+    }
+
     // The roster, so owner names resolve. You may only write your own row.
     match /users/{uid} {
       allow read: if nprep();

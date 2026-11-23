@@ -116,62 +116,35 @@ textarea{resize:vertical;min-height:76px;font-weight:300;line-height:1.6}
 .pill.sky[aria-pressed=true]{background:var(--sky);color:#042430}
 .pill:disabled{opacity:.45;cursor:not-allowed}
 
-/* Day-wise publishing planner. Only the table scrolls on compact desktops. */
+/* Shared weekly content blueprint: separate from dated campaign work. */
 .planner{padding-bottom:48px;min-width:0}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-.planner-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px}
-.planner-toolbar>input{width:158px;min-height:38px;padding:8px 10px}
-.planner-platforms{margin-left:auto}
-.planner-help{color:var(--text-2);font-size:12px;line-height:1.7;margin-bottom:18px}
+.planner-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px}
+.planner-toolbar>.text-button{font-size:11px}
+.planner-help{color:var(--text-2);font-size:12px;line-height:1.7;margin-bottom:20px;max-width:720px}
 .planner-scroll{overflow:auto;border:1px solid var(--line-2);border-radius:12px;background:var(--surface)}
-.planner-table{border-collapse:separate;border-spacing:0;width:100%;table-layout:fixed;min-width:1120px}
-.planner-table th,.planner-table td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-.planner-table tr>:last-child{border-right:0}.planner-table tbody tr:last-child>*{border-bottom:0}
-.planner-table thead th{font-size:12px;font-weight:600;padding:12px;background:var(--surface-2)}
-.planner-table thead tr:first-child>th:first-child{width:94px;vertical-align:middle}
-.planner-table .planner-platform-heading{background:var(--ice);text-align:center;font-size:13px}
-.planner-table .planner-format-heading{text-align:center}
-.planner-table .planner-day-label{padding:16px 10px;background:var(--surface-2);font-size:12px;position:sticky;left:0;z-index:1}
-.planner-day-label strong,.planner-day-label span,.planner-day-label small{display:block}
-.planner-day-label span{font-weight:400;margin-top:4px;color:var(--text-2)}
-.planner-day-label small{font-size:10px;font-weight:400;color:var(--text-3);margin-top:8px}
-.planner-table .planner-today .planner-day-label{background:var(--sky-soft);color:var(--text)}
-.planner-table td{padding:8px}.planner-cell{display:flex;flex-direction:column;gap:8px;min-width:0}
-.planner-table .planner-cell{min-height:80px}
-.planner-card{min-width:0;border:1px solid var(--line-2);border-radius:9px;background:var(--surface);padding:10px;box-shadow:var(--sh-1)}
-.planner-campaign{font-size:10px;color:var(--text-2);line-height:1.5;overflow-wrap:anywhere;padding-left:10px;position:relative;margin-bottom:8px}
-.planner-campaign:before{content:"";position:absolute;left:0;top:4px;width:5px;height:5px;border-radius:50%;background:var(--c)}
-.planner-card-head{display:flex;align-items:flex-start;gap:6px;min-width:0}
-.planner-card-head>.work-complete{width:22px;height:22px;flex:none;margin:0}
-.planner-card-title{text-align:left;font-size:12px;line-height:1.6;font-weight:500;overflow-wrap:anywhere;min-width:0;flex:1;padding:0}
-.planner-card-title:hover{text-decoration:underline;text-underline-offset:3px}
-.planner-card.is-done .planner-card-title{text-decoration:line-through;color:var(--text-3)}
-.planner-card-meta{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:9px;font-size:10px;color:var(--text-2);overflow-wrap:anywhere}
-.planner-card-meta .owner-badge{max-width:100%;font-size:10px;min-height:22px}.planner-card-meta .owner-avatar{width:16px;height:16px;font-size:8px}
-.planner-card-meta .due-time{font-size:10px}.planner-status{font-size:10px}.planner-topic{width:100%;font-size:10px}
-.planner-add{border:1px dashed var(--line-2);border-radius:7px;font-size:11px;min-height:34px;padding:7px 8px;text-align:left;color:var(--text-2)}
-.planner-add:hover{background:var(--sky-soft);color:var(--text)}.planner-add:disabled{opacity:.45;cursor:not-allowed}
-.planner-checklist-bar{display:flex;align-items:center;gap:3px;border-top:1px solid var(--line);padding-top:7px;margin-top:9px}
-.planner-checklist-count{font-size:10px;text-align:left;line-height:1.5;padding:3px;min-width:0}
-.planner-checklist .work-children{padding:4px 0;margin:0}.planner-checklist .work-children .work-children{margin-left:5px;padding-left:7px}
-.planner-checklist .work-tree-row{gap:4px;flex-wrap:wrap;padding:7px 0}
-.planner-checklist .work-tree-row>.work-complete{width:22px;height:22px}
-.planner-checklist .work-tree-content{min-width:54px}.planner-checklist .work-task-title{font-size:11px;line-height:1.6}
-.planner-checklist .work-task-meta{font-size:9px;gap:4px}.planner-checklist .work-task-meta .uid{font-size:9px}
-.planner-checklist .work-disclosure{width:20px;min-width:20px;height:22px;font-size:10px}
-.planner-empty{font-size:11px;color:var(--text-3);padding:10px 4px}
-.planner-extras{margin-top:18px;padding:16px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
-.planner-extras>summary{cursor:pointer;font-size:13px;font-weight:500}.planner-extra-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:12px}
-.planner-extra-cards>div{min-width:0}.planner-extra-cards .hint{margin-bottom:8px}
-.planner-mobile-day{background:var(--surface);border:1px solid var(--line-2);border-radius:12px;margin-bottom:12px;overflow:hidden}
-.planner-mobile-day>summary{cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:16px;font-size:13px;background:var(--surface-2);list-style:none}
-.planner-mobile-day>summary::-webkit-details-marker{display:none}.planner-mobile-day>summary:before{content:"▸";color:var(--text-2)}
-.planner-mobile-day[open]>summary:before{content:"▾"}.planner-mobile-day>summary strong{flex:1;font-weight:500}.planner-mobile-day>summary>span{font-size:11px;color:var(--text-2)}
-.planner-mobile-day.is-today>summary{background:var(--sky-soft)}
-.planner-mobile-platform{padding:14px 14px 4px}.planner-mobile-platform+.planner-mobile-platform{border-top:1px solid var(--line)}
-.planner-mobile-platform h3{font-size:13px;margin-bottom:10px}
-.planner-mobile-lane{padding:8px 0 14px}.planner-mobile-lane h4{font-size:11px;font-weight:500;color:var(--text-2);margin:0 0 7px}
-@media(max-width:720px){.is-planner .pheading>div:first-child{flex-basis:100%}.is-planner .pheading .btn{margin-top:0}.planner-platforms{margin-left:0;width:100%;display:flex}.planner-platforms>button{flex:1;padding:8px 6px;font-size:11px}.planner-toolbar{gap:8px}.planner-toolbar>input{flex:1;min-width:120px}.planner-card-title{font-size:13px}.planner-add{min-height:38px}.planner-extra-cards{grid-template-columns:1fr}}
+.cadence-table{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0}
+.cadence-table th,.cadence-table td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.cadence-table tr>:last-child{border-right:0}.cadence-table tbody tr:last-child>*{border-bottom:0}
+.cadence-table thead th{padding:16px;font-size:13px;font-weight:600;background:var(--ice)}
+.cadence-table thead th:first-child{width:128px}
+.cadence-table tbody th{padding:18px 14px;font-size:12px;font-weight:500;background:var(--surface-2)}
+.cadence-table td{padding:16px}.cadence-cell{display:flex;flex-direction:column;align-items:flex-start;gap:12px;min-width:0;height:100%}
+.cadence-items{margin:0;padding:0 0 0 19px;width:100%;font-size:13px;line-height:1.8;overflow-wrap:anywhere}
+.cadence-items li+li{margin-top:6px}.cadence-items li::marker{color:var(--text-3);font-size:11px}
+.cadence-empty{font-size:12px;color:var(--text-3);font-weight:400;line-height:1.8}
+.cadence-edit{font-size:11px;min-height:28px;padding:3px 6px;border-radius:5px;color:var(--text-2);text-decoration:underline;text-underline-offset:3px;margin-left:-6px}
+.cadence-edit:hover{background:var(--sky-soft);color:var(--text)}
+.cadence-today{display:block;width:max-content;border-radius:5px;background:var(--sky-soft);color:var(--text);font-size:10px;font-weight:500;line-height:1.5;padding:3px 6px;margin-top:7px}
+.cadence-as-needed{background:var(--sky-soft)}.cadence-table .cadence-as-needed th{background:var(--sky-soft)}
+.cadence-day{background:var(--surface);border:1px solid var(--line-2);border-radius:12px;margin-bottom:12px;overflow:hidden}
+.cadence-day>summary{display:flex;align-items:center;gap:10px;cursor:pointer;padding:15px;background:var(--surface-2);list-style:none;font-size:13px}
+.cadence-day>summary::-webkit-details-marker{display:none}.cadence-day>summary:before{content:"▸";color:var(--text-2)}.cadence-day[open]>summary:before{content:"▾"}
+.cadence-day>summary strong{font-weight:500;flex:1}.cadence-day>summary .cadence-today{margin:0}.cadence-day.cadence-as-needed>summary{background:var(--sky-soft)}
+.cadence-mobile-lane{padding:15px}.cadence-mobile-lane+.cadence-mobile-lane{border-top:1px solid var(--line)}
+.cadence-mobile-lane h3{font-size:12px;color:var(--text-2);font-weight:500;margin-bottom:10px}.cadence-mobile-lane .cadence-edit{min-height:34px}
+.cadence-input{min-height:150px;font-size:13px;font-weight:400;line-height:1.8}
+@media(max-width:720px){.cadence-platforms{width:100%;display:flex}.cadence-platforms>button{flex:1}.cadence-items{font-size:13px}.planner-help{font-size:12px}}
 
 /* ── calendar ──────────────────────────────────────────── */
 .cal{padding-bottom:48px}

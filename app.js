@@ -137,7 +137,7 @@ var S={campaigns:[],activities:[],view:"calendar",calView:"next7",workScope:"my"
   loading:true,stale:false,err:null,canWrite:null,open:null,expanded:{},focusAdd:null,lastAdd:{},
   placeFor:null,showFilters:false,me:null,team:[],members:[],userRoster:[],ownerAliases:{},membersReady:false,teamError:"",workCollapsed:{},
   profiles:{},dayMax:3,query:"",focusDay:"",templates:[],templateError:"",templatesLoading:true,
-  sopRules:[],sopReady:false,contentOptionsReady:false,contentOptionsError:"",plannerStart:"",plannerPlatform:""};
+  sopRules:[],sopReady:false,contentOptionsReady:false,contentOptionsError:"",plannerPlatform:"Instagram",weeklyPlan:null,weeklyPlanReady:false,weeklyPlanError:"",cadenceExpanded:{}};
 var db=null,U=null,phone=false;
 var $=function(id){return document.getElementById(id)};
 
@@ -279,7 +279,7 @@ function headTitle(){
 }
 function headSub(){
   if(S.loading)return "Loading the team's plan…";
-  if(S.view==="planner"){var plan=plannerSchedule();return rangeLabel(plan.start,plan.end)+" · "+plan.total+" scheduled "+(plan.total===1?"activity":"activities")}
+  if(S.view==="planner")return "What to publish each week on Instagram and YouTube.";
   if(S.view==="campaigns"){
     if(!S.campaigns.length)return "Nothing planned yet.";
     if(S.query||activeFilters().length){var matches=S.campaigns.filter(campaignMatches).length;return matches+" matching "+(matches===1?"campaign":"campaigns")}
@@ -310,16 +310,17 @@ function renderHead(){
   var cal=S.view!=="campaigns";
   var box=el("div","phead"+(S.view==="planner"?" is-planner":"")+(S.view==="calendar"&&S.calView==="next7"?" is-weekly":""));
   var heading=el("div","pheading"),intro=el("div");
-  intro.appendChild(el("p","eyebrow",S.view==="planner"?"Publishing schedule":cal?"Daily work":"Campaign planning"));
+  intro.appendChild(el("p","eyebrow",S.view==="planner"?"Weekly content plan":cal?"Daily work":"Campaign planning"));
   intro.appendChild(el("h1",null,headTitle()));
   intro.appendChild(el("p","psub",headSub()));heading.appendChild(intro);
   var add=el("button","btn btn-p","+ "+(!cal?"New campaign":"New activity"));add.id="new-act";
   add.hidden=S.loading||!S.me||!writable()||(!S.campaigns.length&&S.view!=="planner");
-  add.onclick=!cal?function(){openCampaign(null)}:function(){var range=viewRange();openActivity(null,S.view==="planner"?(S.plannerStart||TODAY):S.calView==="next7"?(S.focusDay||(TODAY>=range[0]&&TODAY<=range[1]?TODAY:range[0])):undefined)};
-  heading.appendChild(add);box.appendChild(heading);
-  if(S.me&&!S.loading&&writable()){
+  add.onclick=!cal?function(){openCampaign(null)}:function(){var range=viewRange();openActivity(null,S.calView==="next7"?(S.focusDay||(TODAY>=range[0]&&TODAY<=range[1]?TODAY:range[0])):undefined)};
+  if(S.view!=="planner")heading.appendChild(add);box.appendChild(heading);
+  if(S.me&&!S.loading&&writable()&&S.view!=="planner"){
     var rules=el("button","text-button sop-manage","SOP library");rules.onclick=openSopRules;heading.insertBefore(rules,add);
   }
+  if(S.view==="planner"){h.appendChild(box);return}
   var ctl=el("div","pctl");
   if(S.me){var scope=el("div","work-scope");scope.setAttribute("role","group");scope.setAttribute("aria-label","Work visibility");[["my","My work"],["team","Team work"]].forEach(function(option){var button=el("button",S.workScope===option[0]?"on":"",option[1]);button.setAttribute("aria-pressed",String(S.workScope===option[0]));button.onclick=function(){S.workScope=option[0];S.filters.owner="";render()};scope.appendChild(button)});ctl.appendChild(scope)}
   if(S.view==="calendar"&&(S.calView==="next7"||S.calView==="week"||S.calView==="month")){
@@ -449,7 +450,7 @@ function workFoldButton(kind,id,title,body){
   button.onclick=function(){S.workCollapsed[key]=!S.workCollapsed[key];rememberWorkFolds();document.querySelectorAll("[data-work-fold]").forEach(function(peer){if(peer.getAttribute("data-work-fold")===key)draw(peer)})};return button;
 }
 function foldAllWork(closed){
-  S.campaigns.forEach(function(c){S.workCollapsed["campaign:"+c.id]=closed;S.expanded["c"+c.id]=!closed});S.activities.forEach(function(a){S.workCollapsed["task:"+a.id]=closed;S.workCollapsed["planner-task:"+a.id]=closed;S.expanded["a"+a.id]=!closed;effectiveWork(a).forEach(function(row){if(kids(row.n).length){S.workCollapsed["group:"+row.id]=closed;S.expanded["n"+row.id]=!closed}})});if(S.view==="planner")plannerSchedule().days.forEach(function(day){S.workCollapsed["planner-day:"+day.date]=closed});rememberWorkFolds();render();
+  S.campaigns.forEach(function(c){S.workCollapsed["campaign:"+c.id]=closed;S.expanded["c"+c.id]=!closed});S.activities.forEach(function(a){S.workCollapsed["task:"+a.id]=closed;S.expanded["a"+a.id]=!closed;effectiveWork(a).forEach(function(row){if(kids(row.n).length){S.workCollapsed["group:"+row.id]=closed;S.expanded["n"+row.id]=!closed}})});rememberWorkFolds();render();
 }
 function renderWorkCampaigns(host,rows,options){
   options=options||{};S.campaigns.forEach(function(c){var entries=rows.filter(function(row){return row.a.campaignId===c.id});if(!entries.length)return;
@@ -606,36 +607,61 @@ function overdueBlock(){
   var pending=rows.filter(function(row){return !row.done}).length,complete=rows.length-pending,box=el("details","od work-overdue"),summary=el("summary","od-h",(pending?"Overdue · "+pending:"Earlier deadlines")+(complete?" · "+complete+" complete":"")+" · Review separately");box.open=!!S.expanded.workOverdue;box.ontoggle=function(){S.expanded.workOverdue=box.open};box.appendChild(summary);box.appendChild(el("p","hint","Earlier deadlines stay here. Completed items keep their place in each checklist."));renderWorkCampaigns(box,rows,{compact:true});return box;
 }
 
-/* The publishing planner uses activity dates. Checklist deadlines keep their
-   context inside the activity and continue to drive the existing work views. */
-var PLANNER_PLATFORMS=[{id:"YouTube",columns:[{id:"Live",label:"Live"},{id:"Long form",label:"Long Form"},{id:"Short",label:"Shorts"}]},{id:"Instagram",columns:[{id:"Reel",label:"Reel"},{id:"Post",label:"Post"},{id:"Carousel",label:"Carousel"}]}];
-function plannerPlatforms(){return PLANNER_PLATFORMS.filter(function(p){return !S.plannerPlatform||p.id===S.plannerPlatform})}
-function plannerColumns(){var columns=[];plannerPlatforms().forEach(function(p){p.columns.forEach(function(c){var formats=contentFormats(p.id,true),format=formats.find(function(f){return f.id===c.id});if(!format&&c.id==="Post")format=formats.find(function(f){return normalizeSopName(f.label)===normalizeSopName(formatLabel("Post")||"Post")});var original=DEFAULT_FORMATS.find(function(f){return f.id===c.id});columns.push({platform:p.id,format:format?format.id:c.id,label:format&&original&&format.label!==original.label?format.label:c.label})})});return columns}
-function plannerSchedule(list){
-  var start=S.plannerStart||TODAY,end=addDays(start,6),columns=plannerColumns(),platforms=plannerPlatforms().map(function(p){return p.id}),activities=(list||visible()).filter(function(a){return (a.platforms||[]).some(function(p){return platforms.indexOf(p)>=0})}),days=[],other=[],undated=[],total=0;
-  for(var i=0;i<7;i++)days.push({date:addDays(start,i),cells:columns.map(function(column){return {column:column,activities:[]}}),count:0});
-  activities.forEach(function(a){if(!a.dueDate){undated.push(a);return}if(a.dueDate<start||a.dueDate>end)return;total++;var day=days[daysBetween(start,a.dueDate)],matched=false;day.cells.forEach(function(cell){if(a.type===cell.column.format&&(a.platforms||[]).indexOf(cell.column.platform)>=0){cell.activities.push(a);matched=true}});day.count++;if(!matched)other.push(a)});
-  days.forEach(function(day){day.cells.forEach(function(cell){cell.activities.sort(function(a,b){return (a.dueTime||"99").localeCompare(b.dueTime||"99")})})});return {start:start,end:end,columns:columns,days:days,total:total,other:other,undated:undated};
+/* A shared weekly content blueprint, independent of campaign activity dates. */
+var CADENCE_PLATFORMS=[
+  {id:"Instagram",columns:[{id:"shorts",label:"Shorts / Reels"},{id:"carousel",label:"Carousel"},{id:"stories",label:"Stories"}]},
+  {id:"YouTube",columns:[{id:"shorts",label:"Shorts"},{id:"long-form",label:"Long Form"},{id:"live",label:"Live"},{id:"exam",label:"Exam"}]}
+];
+var CADENCE_DAYS=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday","As and When"];
+function cadenceKey(platform,day,column){return platform+":"+day+":"+column}
+function defaultWeeklyPlan(){
+  var plan={version:0,cells:{}};
+  CADENCE_PLATFORMS.forEach(function(p){CADENCE_DAYS.forEach(function(day,index){p.columns.forEach(function(c){plan.cells[cadenceKey(p.id,index,c.id)]=[]})})});
+  function put(platform,day,column,titles){var key=cadenceKey(platform,day,column);plan.cells[key]=titles.map(function(title,index){return {id:"seed-"+platform+"-"+day+"-"+column+"-"+index,title:title}})}
+  var igShorts=[["Academic - Its Easy"],["Testimonial - Topper Talk Introduction","Exam Strategy | Salary"],["Academic - Its Easy"],["Gold Student Testimonial"],["Academic - Its Easy"],["Nursing Story"],["Promotional - Product"]];
+  var carousels=[["Academic - Concept of Post Live Class"],["Academic - Its Easy"],["Academic - IBQ"],["Topper Talk - Strategy","Academic"],["Academic - Concept of Post Live Class"],["Academic - Its Easy"],["Academic - IBQ","Topper Talk - Questions Discussed"]];
+  for(var day=0;day<7;day++){
+    put("Instagram",day,"shorts",igShorts[day]);put("Instagram",day,"carousel",carousels[day]);
+    var stories=[day===0?"Gold Plan Student Testimonial":"Gold Plan Student","Product Promotions","Carousel Based Story"];if(day===5)stories.unshift("NASHTA");put("Instagram",day,"stories",stories);
+    put("YouTube",day,"shorts",["Academic - Concept of Post Live Class"]);put("YouTube",day,"live",day===6?["Academic - 3","Topper's Talk"]:["Academic - 3"]);
+  }
+  put("Instagram",7,"shorts",["Job Updates","Testimonial","Result"]);
+  put("YouTube",0,"long-form",["High Yield Videos"]);put("YouTube",2,"long-form",["Gold Lecture"]);put("YouTube",4,"long-form",["High Yield Videos"]);put("YouTube",5,"long-form",["Exam Strategy Video"]);put("YouTube",0,"exam",["Mission BHU"]);
+  put("YouTube",7,"long-form",["Testimonial","Jobs Vacancy","Exam Recall based Solutions"]);put("YouTube",7,"live",["Vacancy","Strategy - Exam Analysis | Solutions"]);return plan;
 }
-function plannerCard(a){
-  var card=el("article","planner-card"+(a.status==="Published"?" is-done":"")),campaign=campById(a.campaignId),head=el("div","planner-card-head"),title=el("button","planner-card-title",a.title),rows=effectiveWork(a).filter(function(row){return !kids(row.n).length&&ownerInScope(row.owner)});
-  card.setAttribute("data-planner-activity",a.id);card.style.setProperty("--c",campColor(a.campaignId));card.appendChild(el("p","planner-campaign",campaign?campaign.name:"No campaign"));if(ownerInScope(a.owner||""))head.appendChild(completionControl(a));title.setAttribute("data-focus-key","activity:"+a.id);title.setAttribute("aria-label","Open activity: "+a.title);title.onclick=function(){openActivity(a)};head.appendChild(title);card.appendChild(head);
-  var meta=el("div","planner-card-meta");meta.appendChild(el("span","planner-status",a.status||"Not started"));if(a.dueTime)meta.appendChild(dueTimeBadge(a.dueTime));if(a.angle)meta.appendChild(el("span","planner-topic",topicLabel(a.angle,a.type,(a.platforms||[])[0])));if(a.owner)meta.appendChild(uname(a.owner));card.appendChild(meta);
-  if(rows.length){var body=el("div","planner-checklist"),key="planner-task:"+a.id;if(S.workCollapsed[key]===undefined)S.workCollapsed[key]=true;var tree=workGroup({a:a,rows:rows},{compact:true}).querySelector(".work-group-body");tree.hidden=false;body.appendChild(tree);var bar=el("div","planner-checklist-bar"),toggle=workFoldButton("planner-task",a.id,a.title,body),count=el("button","planner-checklist-count",rows.filter(function(row){return row.done}).length+"/"+rows.length+" subtasks");count.setAttribute("aria-label","Toggle subtasks: "+a.title);count.onclick=function(){toggle.click()};bar.appendChild(toggle);bar.appendChild(count);card.appendChild(bar);card.appendChild(body)}
-  return card;
+function validateWeeklyPlan(plan){
+  function fail(message){throw Object.assign(new Error(message),{userMessage:message})}
+  if(!plan||!Number.isInteger(plan.version)||plan.version<0||!plan.cells||typeof plan.cells!=="object"||Array.isArray(plan.cells))fail("The weekly plan could not be read. Reload to try again.");
+  var expected=Object.keys(defaultWeeklyPlan().cells);if(Object.keys(plan.cells).length!==expected.length)fail("The weekly plan is missing a day or format.");
+  expected.forEach(function(key){var items=plan.cells[key],seen={};if(!Array.isArray(items)||items.length>20)fail("Keep each list within 20 items.");items.forEach(function(item){if(!item||typeof item.id!=="string"||!item.id||item.id.length>140||seen[item.id]||typeof item.title!=="string"||!item.title.trim()||item.title.length>240)fail("Give each item a name of up to 240 characters.");seen[item.id]=true})});return true;
 }
-function plannerCell(cell,date){
-  var body=el("div","planner-cell");body.setAttribute("data-planner-date",date);body.setAttribute("data-planner-platform",cell.column.platform);body.setAttribute("data-planner-format",cell.column.format);
-  cell.activities.forEach(function(a){body.appendChild(plannerCard(a))});
-  if(S.me&&writable()){var add=el("button","planner-add",cell.activities.length?"+ Add activity":"+ Plan activity"),p=contentPlatform(cell.column.platform),f=contentFormats(cell.column.platform).find(function(f){return f.id===cell.column.format});add.setAttribute("aria-label","Plan "+platformLabel(cell.column.platform)+" "+cell.column.label+" on "+fmtLong(date));add.setAttribute("data-focus-key","planner-add:"+date+":"+cell.column.platform+":"+cell.column.format);add.disabled=!p||p.archived||!f||!S.contentOptionsReady;add.title=add.disabled?"Restore this platform and format in Content options before planning new work.":"Create an activity for this day and format";add.onclick=function(){openActivity(null,date,undefined,{type:cell.column.format,platforms:[cell.column.platform]})};body.appendChild(add)}else if(!cell.activities.length)body.appendChild(el("span","planner-empty","Nothing planned"));return body;
+function weeklyPlannerItems(text,baseline){
+  var used={};return String(text||"").split(/\r?\n/).map(function(line){return line.trim()}).filter(Boolean).map(function(title,index){var old=(baseline||[]).find(function(item){return item.title===title&&!used[item.id]})||((baseline||[])[index]&&!used[baseline[index].id]?baseline[index]:null),id=old?old.id:sid();used[id]=true;return {id:id,title:title}});
+}
+function saveWeeklyPlannerCell(key,items,baseline){
+  if(!S.weeklyPlanReady)return Promise.reject(Object.assign(new Error("Wait for the weekly plan to load before saving."),{userMessage:"Wait for the weekly plan to load before saving."}));
+  return db.runTransaction(function(tx){var ref=db.doc("workspaceSettings/weeklyPlanner");return tx.get(ref).then(function(snap){var current=snap.exists?snap.data():defaultWeeklyPlan();validateWeeklyPlan(current);if(!Object.prototype.hasOwnProperty.call(current.cells,key))throw new Error("This day or format no longer exists.");if(JSON.stringify(current.cells[key])!==JSON.stringify(baseline))throw Object.assign(new Error("This list was changed by a teammate. Reopen it to edit the latest version."),{userMessage:"This list was changed by a teammate. Reopen it to edit the latest version."});var next={version:current.version+1,cells:Object.assign({},current.cells),updatedAt:new Date().toISOString(),updatedBy:S.me.id};next.cells[key]=items;validateWeeklyPlan(next);tx.set(ref,next);return next})}).then(function(saved){S.weeklyPlan=JSON.parse(JSON.stringify(saved));render();return saved});
+}
+function openWeeklyPlannerCell(platform,day,column){
+  if(!writable()||!S.weeklyPlanReady)return;
+  var key=cadenceKey(platform.id,day,column.id),baseline=JSON.parse(JSON.stringify(S.weeklyPlan.cells[key])),initial=baseline.map(function(item){return item.title}).join("\n"),ui=actionDialog(CADENCE_DAYS[day]+" · "+platform.id+" "+column.label,day===7?"Keep content ideas to use as needed, outside the fixed weekly schedule.":"Edit the content you plan for this day each week."),text=el("textarea","cadence-input"),save=el("button","btn btn-p","Save list");
+  text.value=initial;text.rows=Math.max(5,Math.min(10,baseline.length+2));text.placeholder="One item per line";text.maxLength=6000;ui.body.insertBefore(field("Content items",text,"One item per line. An empty list clears this cell."),ui.error);
+  function read(){return weeklyPlannerItems(text.value,baseline)}
+  function validate(){try{var draft={version:0,cells:Object.assign({},S.weeklyPlan.cells)};draft.cells[key]=read();validateWeeklyPlan(draft);save.disabled=!S.weeklyPlanReady;ui.error.hidden=true;return !save.disabled}catch(e){save.disabled=true;ui.error.textContent=e.userMessage||e.message;ui.error.hidden=false;return false}}
+  text.oninput=validate;save.onclick=function(){if(validate())runDialogSave(ui,save,function(){return saveWeeklyPlannerCell(key,read(),baseline)},function(){toast("Weekly plan saved for the team")})};ui.foot.appendChild(save);validate();keyboardSave(ui.node,save);ui.node.querySelector(".keyboard-save-hint").textContent="One item per line · Ctrl/⌘+Enter saves";overlay(ui.node,function(){return text.value!==initial},true);
+}
+function cadenceCell(platform,day,column){
+  var key=cadenceKey(platform.id,day,column.id),items=S.weeklyPlan.cells[key],cell=el("div","cadence-cell");cell.setAttribute("data-cadence-cell",key);
+  if(items.length){var list=el("ol","cadence-items");items.forEach(function(item){var li=el("li",null,item.title);li.setAttribute("data-cadence-item",item.id);list.appendChild(li)});cell.appendChild(list)}else cell.appendChild(el("p","cadence-empty","Nothing planned"));
+  if(S.me&&writable()){var edit=el("button","cadence-edit",items.length?"Edit list":"+ Add items");edit.setAttribute("aria-label","Edit "+platform.id+" "+CADENCE_DAYS[day]+" "+column.label);edit.onclick=function(){openWeeklyPlannerCell(platform,day,column)};cell.appendChild(edit)}return cell;
 }
 function renderPlanner(main){
-  var box=el("section","planner");box.setAttribute("aria-label","Day-wise publishing planner");main.appendChild(box);if(S.loading){box.appendChild(el("p","note","Loading the publishing schedule…"));return}
-  var plan=plannerSchedule(),toolbar=el("div","planner-toolbar"),nav=el("div","nav"),previous=el("button",null,"‹"),next=el("button",null,"›"),today=el("button","ghost","Today");previous.setAttribute("aria-label","Previous planner week");next.setAttribute("aria-label","Next planner week");previous.onclick=function(){S.plannerStart=addDays(plan.start,-7);render()};next.onclick=function(){S.plannerStart=addDays(plan.start,7);render()};today.onclick=function(){S.plannerStart=TODAY;render()};nav.appendChild(previous);nav.appendChild(next);toolbar.appendChild(nav);toolbar.appendChild(today);
-  var date=input("date",plan.start);date.setAttribute("aria-label","Planner start date");date.onchange=function(){if(date.value&&date.checkValidity()){S.plannerStart=date.value;render()}};toolbar.appendChild(date);var platforms=el("div","work-scope planner-platforms");platforms.setAttribute("role","group");platforms.setAttribute("aria-label","Planner platforms");[["","Both platforms"],["YouTube",platformLabel("YouTube")],["Instagram",platformLabel("Instagram")]].forEach(function(option){var button=el("button",S.plannerPlatform===option[0]?"on":"",option[1]);button.setAttribute("aria-pressed",String(S.plannerPlatform===option[0]));button.onclick=function(){S.plannerPlatform=option[0];render()};platforms.appendChild(button)});toolbar.appendChild(platforms);box.appendChild(toolbar);box.appendChild(el("p","planner-help","Activities appear on their due date. Expand subtasks to see the checklist and its separate deadlines."));
-  if(phone){plan.days.forEach(function(day,index){var section=el("details","planner-mobile-day"+(day.date===TODAY?" is-today":"")),key="planner-day:"+day.date;section.open=S.workCollapsed[key]===undefined?index===0:!S.workCollapsed[key];var summary=el("summary"),label=(day.date===TODAY?"Today":day.date===addDays(TODAY,1)?"Tomorrow":DOW[dowIdx(day.date)])+" · "+fmtShort(day.date);summary.appendChild(el("strong",null,label));summary.appendChild(el("span",null,day.count+" planned"));section.appendChild(summary);section.ontoggle=function(){S.workCollapsed[key]=!section.open;rememberWorkFolds()};plannerPlatforms().forEach(function(platform){var group=el("div","planner-mobile-platform");group.appendChild(el("h3",null,platformLabel(platform.id)));day.cells.filter(function(cell){return cell.column.platform===platform.id}).forEach(function(cell){var lane=el("div","planner-mobile-lane");lane.appendChild(el("h4",null,cell.column.label));lane.appendChild(plannerCell(cell,day.date));group.appendChild(lane)});section.appendChild(group)});box.appendChild(section)})}
-  else{var scroll=el("div","planner-scroll"),table=el("table","planner-table"),caption=el("caption","sr-only","Publishing schedule, "+rangeLabel(plan.start,plan.end)),thead=el("thead"),platformRow=el("tr"),formatRow=el("tr"),dayHeader=el("th",null,"Day");scroll.setAttribute("tabindex","0");scroll.setAttribute("role","region");scroll.setAttribute("aria-label","Publishing schedule table");table.appendChild(caption);dayHeader.rowSpan=2;dayHeader.scope="col";platformRow.appendChild(dayHeader);plannerPlatforms().forEach(function(p){var heading=el("th","planner-platform-heading",platformLabel(p.id));heading.colSpan=3;heading.scope="colgroup";platformRow.appendChild(heading)});plan.columns.forEach(function(c){var heading=el("th","planner-format-heading",c.label);heading.scope="col";formatRow.appendChild(heading)});thead.appendChild(platformRow);thead.appendChild(formatRow);table.appendChild(thead);var tbody=el("tbody");plan.days.forEach(function(day){var row=el("tr",day.date===TODAY?"planner-today":""),dateCell=el("th","planner-day-label");dateCell.scope="row";dateCell.appendChild(el("strong",null,day.date===TODAY?"Today":day.date===addDays(TODAY,1)?"Tomorrow":DOW[dowIdx(day.date)]));dateCell.appendChild(el("span",null,fmtShort(day.date)));dateCell.appendChild(el("small",null,day.count+" planned"));row.appendChild(dateCell);day.cells.forEach(function(cell){var td=el("td");td.appendChild(plannerCell(cell,day.date));row.appendChild(td)});tbody.appendChild(row)});table.appendChild(tbody);scroll.appendChild(table);box.appendChild(scroll)}
-  [[plan.other,"Other formats","These activities use formats outside the six Planner columns."],[plan.undated,"Needs a date","Set an activity due date to place it in the publishing schedule."]].forEach(function(extra){if(!extra[0].length)return;var details=el("details","planner-extras"),summary=el("summary",null,extra[1]+" · "+extra[0].length);details.appendChild(summary);details.appendChild(el("p","hint",extra[2]));var list=el("div","planner-extra-cards");extra[0].forEach(function(a){var wrapper=el("div"),context=[a.dueDate?fmtShort(a.dueDate):"No date",formatLabel(a.type,(a.platforms||[])[0])].filter(Boolean).join(" · ");wrapper.appendChild(el("p","hint",context));wrapper.appendChild(plannerCard(a));list.appendChild(wrapper)});details.appendChild(list);box.appendChild(details)});
+  var box=el("section","planner cadence");box.setAttribute("aria-label","Reusable weekly content plan");main.appendChild(box);
+  if(!S.weeklyPlanReady){box.appendChild(el("p",S.weeklyPlanError?"banner":"note",S.weeklyPlanError||"Loading the weekly content plan…"));if(S.weeklyPlanError){var retry=el("button","btn btn-o","Reload plan");retry.onclick=function(){location.reload()};box.appendChild(retry)}return}
+  var platform=CADENCE_PLATFORMS.find(function(p){return p.id===S.plannerPlatform})||CADENCE_PLATFORMS[0],toolbar=el("div","planner-toolbar"),switcher=el("div","work-scope cadence-platforms");switcher.setAttribute("role","group");switcher.setAttribute("aria-label","Planner platforms");CADENCE_PLATFORMS.forEach(function(p){var button=el("button",platform.id===p.id?"on":"",p.id);button.setAttribute("aria-pressed",String(platform.id===p.id));button.onclick=function(){S.plannerPlatform=p.id;render()};switcher.appendChild(button)});toolbar.appendChild(switcher);
+  if(phone){[["Expand all days",true],["Collapse all days",false]].forEach(function(option){var button=el("button","text-button",option[0]);button.onclick=function(){CADENCE_DAYS.forEach(function(day,index){S.cadenceExpanded[platform.id+":"+index]=option[1]});render()};toolbar.appendChild(button)})}box.appendChild(toolbar);box.appendChild(el("p","planner-help","Your repeatable content mix for each weekday. “As and When” holds content to use as opportunities arise."));
+  if(phone){CADENCE_DAYS.forEach(function(day,index){var section=el("details","cadence-day"+(index===7?" cadence-as-needed":"")),key=platform.id+":"+index,summary=el("summary");section.open=S.cadenceExpanded[key]===undefined?(index===dowIdx(TODAY)||index===7):S.cadenceExpanded[key];summary.appendChild(el("strong",null,day));if(index===dowIdx(TODAY))summary.appendChild(el("span","cadence-today","Today"));section.appendChild(summary);section.ontoggle=function(){if(section.isConnected)S.cadenceExpanded[key]=section.open};platform.columns.forEach(function(column){var lane=el("section","cadence-mobile-lane");lane.appendChild(el("h3",null,column.label));lane.appendChild(cadenceCell(platform,index,column));section.appendChild(lane)});box.appendChild(section)})}
+  else{var scroll=el("div","planner-scroll"),table=el("table","cadence-table"),caption=el("caption","sr-only",platform.id+" weekly content plan"),head=el("thead"),headRow=el("tr"),dayHeading=el("th",null,"Day");dayHeading.scope="col";headRow.appendChild(dayHeading);platform.columns.forEach(function(column){var th=el("th",null,column.label);th.scope="col";headRow.appendChild(th)});head.appendChild(headRow);table.appendChild(caption);table.appendChild(head);var body=el("tbody");CADENCE_DAYS.forEach(function(day,index){var row=el("tr",index===7?"cadence-as-needed":""),label=el("th",null,day);label.scope="row";if(index===dowIdx(TODAY))label.appendChild(el("span","cadence-today","Today"));row.appendChild(label);platform.columns.forEach(function(column){var td=el("td");td.appendChild(cadenceCell(platform,index,column));row.appendChild(td)});body.appendChild(row)});table.appendChild(body);scroll.appendChild(table);box.appendChild(scroll)}
 }
 function renderCalendar(main){
   var box=el("div","cal");
@@ -1774,7 +1800,7 @@ function renderMain(){
     var sb=el("div","banner");sb.appendChild(el("span",null,"◷"));
     sb.appendChild(el("span",null,"Still loading the team's campaigns…"));main.appendChild(sb);
   }
-  if(S.view!=="campaigns"&&(S.query||activeFilters().length)&&!visible().length&&!S.loading){
+  if(S.view==="calendar"&&(S.query||activeFilters().length)&&!visible().length&&!S.loading){
     main.appendChild(noResults("No matching activities","Try another search or clear your filters."));
   }else if(S.view==="calendar")renderCalendar(main);else if(S.view==="planner")renderPlanner(main);else renderCampaigns(main);
   if(S.focusAdd){
@@ -2714,10 +2740,10 @@ function showGate(kind,extra){
 
 function startData(){
   subs.forEach(function(f){try{f()}catch(e){}});subs=[];
-  S.loading=true;S.err=null;S.sopReady=false;S.sopRules=[];pending=7;S.contentOptionsReady=false;S.contentOptionsError="";render();
+  S.loading=true;S.err=null;S.sopReady=false;S.sopRules=[];pending=8;S.weeklyPlan=null;S.weeklyPlanReady=false;S.weeklyPlanError="";S.contentOptionsReady=false;S.contentOptionsError="";render();
   S.templates=[];S.templatesLoading=true;S.templateError="";
   S.members=[];S.userRoster=[];S.ownerAliases={};S.membersReady=false;S.teamError="";
-  var waiting={campaigns:true,activities:true,users:true,teamMembers:true,contentOptions:true,sopRules:true,subtaskTemplates:true};
+  var waiting={campaigns:true,activities:true,users:true,teamMembers:true,contentOptions:true,weeklyPlanner:true,sopRules:true,subtaskTemplates:true};
   function received(key,snap){
     if(waiting[key]&&(!snap||!snap.metadata.fromCache)){
       waiting[key]=false;settled();
@@ -2757,6 +2783,7 @@ function startData(){
     received("users",snap);render();
   },function(){received("users")}));
   subs.push(db.collection("teamMembers").onSnapshot({includeMetadataChanges:true},function(snap){S.members=snap.docs.map(function(d){return Object.assign({},d.data(),{id:d.id})});S.membersReady=true;S.teamError="";rebuildTeamDirectory();received("teamMembers",snap);render()},function(e){S.membersReady=false;S.teamError="The team directory could not load. Reload to try again.";received("teamMembers");render()}));
+  subs.push(db.doc("workspaceSettings/weeklyPlanner").onSnapshot({includeMetadataChanges:true},function(snap){try{var plan=snap.exists?snap.data():defaultWeeklyPlan();validateWeeklyPlan(plan);S.weeklyPlan=plan;S.weeklyPlanReady=true;S.weeklyPlanError=""}catch(e){S.weeklyPlanReady=false;S.weeklyPlanError="The weekly content plan could not load. Reload to try again."}received("weeklyPlanner",snap);render()},function(){S.weeklyPlanReady=false;S.weeklyPlanError="The weekly content plan could not load. Reload to try again.";received("weeklyPlanner");render()}));
   subs.push(db.doc("workspaceSettings/contentOptions").onSnapshot({includeMetadataChanges:true},function(snap){var options=snap.exists?snap.data():defaultContentOptions();try{validateContentOptions(options);setContentOptions(options);S.contentOptionsReady=true;S.contentOptionsError=""}catch(e){S.contentOptionsReady=false;S.contentOptionsError="Content options could not load. Reopen the app to try again."}received("contentOptions",snap);render()},function(){S.contentOptionsReady=false;S.contentOptionsError="Content options could not load. Reload to try again.";received("contentOptions");render()}));
 }
 
@@ -2812,7 +2839,7 @@ document.addEventListener("click",function(e){if(!e.target.closest(".account"))c
   auth.onAuthStateChanged(function(u){
     if(!u){
       subs.forEach(function(f){try{f()}catch(e){}});subs=[];
-      S.me=null;S.aiPlanning={};S.campaigns=[];S.activities=[];S.team=[];S.userRoster=[];S.members=[];S.ownerAliases={};S.workCollapsed={};S.membersReady=false;S.contentOptionsReady=false;setContentOptions(defaultContentOptions());S.templates=[];S.templateError="";S.templatesLoading=true;S.sopRules=[];S.sopReady=false;S.loading=true;
+      S.me=null;S.aiPlanning={};S.weeklyPlan=null;S.weeklyPlanReady=false;S.weeklyPlanError="";S.cadenceExpanded={};S.campaigns=[];S.activities=[];S.team=[];S.userRoster=[];S.members=[];S.ownerAliases={};S.workCollapsed={};S.membersReady=false;S.contentOptionsReady=false;setContentOptions(defaultContentOptions());S.templates=[];S.templateError="";S.templatesLoading=true;S.sopRules=[];S.sopReady=false;S.loading=true;
       render();showGate("signin");return;
     }
     if(!emailAllowed(u.email)){S.me=null;render();showGate("denied",u.email);return;}
