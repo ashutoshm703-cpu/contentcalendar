@@ -7,7 +7,7 @@ whole team sees live.
   levels deep, with groups that roll up their progress.
 - Activities carry format, topic, CTA, platforms, end date and time, owner,
   keywords and a script. Subtasks carry their own platform, type, owner and date.
-- Six views: **Today**, **Next 7 days**, **Week**, **Month**, **Planner**, **Campaigns**.
+- Five views: **Today**, **Weekly**, **Month**, **Planner**, **Campaigns**.
 
 No build step. Static files, Firestore for data, Firebase Auth for sign-in.
 
@@ -46,14 +46,19 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   person preserves their assignment ID. An allowed account signing in with the
   same email resolves earlier assignments to My work without rewriting tasks.
   Adding a person does not send an invitation or grant access to the app.
-- **Next 7 days** opens first. Select a day to focus its work; choose
-  **Show all 7 days** to return to the week ahead. Week and Month use an agenda
-  on narrow screens.
-- Today and the same selected date in Next 7 days share the same work list.
+- **Weekly** opens first, using the grouped checklist layout from the former
+  Next 7 days view. It shows Monday–Sunday, including completed and unfinished
+  work in saved order. **Previous week / Next week** browse history and future
+  dates; **This week** returns to the current week. **Jump to date** opens a
+  specific day in its containing week. Select a day to focus its work and choose
+  **Show full week** to return to all seven days. Day tiles and the heading show
+  unfinished/completed counts. The separate Week grid tab is hidden. Month uses
+  an agenda on narrow screens.
+- Today and the same selected date in Weekly share the same work list.
   Work keeps its hierarchy: **Campaign → video/activity → task group → subtask**.
   Every selected subtask stays nested under its video and original groups, in
   saved order. Its ancestors stay visible even when their dates or owners differ;
-  context parents are not counted as work due on the selected date. Week, Month,
+  context parents are not counted as work due on the selected date. Weekly, Month,
   and earlier-deadline views keep the same grouping, with campaign names
   above each video when there is no shared campaign heading. Month overflow
   reveals additional whole video groups rather than splitting their checklists.
@@ -113,7 +118,7 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   still offers **Set deadline**. Overdue dates are highlighted until completion.
 - Tasks, groups and nested subtasks support an optional **Due time**. Set it in
   task/subtask details or the activity checklist's inline Due time field. Set
-  times stay visible in the row/header when collapsed and in Today, Next 7 days,
+  times stay visible in the row/header when collapsed and in Today, Weekly,
   Week, Month and Campaigns. Times are independent at each level; blank times
   stay unspecified. Duplicating or repeating work retains its set times, and
   completing work preserves its saved checklist sequence.
@@ -327,6 +332,9 @@ recovery. The browser test uses an in-memory database and never contacts Firebas
 `node tests/planner.test.cjs` checks publishing lanes, date boundaries, visibility
 and safe content-option upgrades. `node tests/reuse-ui.cjs --planner-only` runs
 the Planner's creation, editing, completion, filters and mobile checks in isolation.
+`node tests/weekly.test.cjs` checks calendar-week boundaries, historical completion
+states and navigation without data changes. `node tests/reuse-ui.cjs --weekly-only`
+checks past/future navigation, day focus, date jumps and historical task editing.
 
 ## Gemini video task planning setup
 

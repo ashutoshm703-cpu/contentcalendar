@@ -159,7 +159,7 @@ function dowIdx(s){return (parseISO(s).getDay()+6)%7}
 function monthLast(y,m){return y+"-"+pad(m+1)+"-"+pad(new Date(y,m+1,0).getDate())}
 function viewRange(){
   if(S.calView==="today")return[TODAY,TODAY];
-  if(S.calView==="next7")return[TODAY,addDays(TODAY,6)];
+  if(S.calView==="next7"){var start=weekStart(S.anchor||TODAY);return[start,addDays(start,6)]}
   if(S.calView==="week"){var s=weekStart(S.anchor||TODAY);return[s,addDays(s,6)]}
   return[S.y+"-"+pad(S.m+1)+"-01",monthLast(S.y,S.m)];
 }
@@ -175,7 +175,7 @@ function viewLabel(){
   if(S.calView==="month")return MONTHS[S.m]+" "+S.y;
   if(S.calView==="week")return "Week of "+rangeLabel(r[0],r[1]);
   if(S.calView==="today")return "Today · "+DOW[dowIdx(TODAY)]+" "+fmtLong(TODAY);
-  return "Next 7 days · "+rangeLabel(r[0],r[1]);
+  return "Weekly · "+rangeLabel(r[0],r[1]);
 }
 
 /* ─── derived ───────────────────────────────────────────── */
@@ -271,8 +271,7 @@ function headTitle(){
   if(S.view==="campaigns")return "Campaigns";
   if(S.view==="planner")return "Content planner";
   if(S.calView==="today")return "Today";
-  if(S.calView==="next7")return "Next 7 days";
-  if(S.calView==="week"){
+  if(S.calView==="next7"||S.calView==="week"){
     var r=viewRange();
     return r[0]===weekStart(TODAY)?"This week":"Week of "+fmtLong(r[0]);
   }
@@ -292,8 +291,7 @@ function headSub(){
   if(S.calView==="next7"&&S.focusDay)r=[S.focusDay,S.focusDay];
   var rows=workItems().filter(function(row){return row.due>=r[0]&&row.due<=r[1]}),n=rows.filter(function(row){return !row.done}).length,done=rows.length-n;
   if(S.calView==="today")return n+" to do today"+(done?" · "+done+" complete":"");
-  if(S.calView==="next7")
-    return S.focusDay?n+" to do on "+fmtShort(S.focusDay):n+" to do over the next seven days";
+  if(S.calView==="next7")return rangeLabel(r[0],r[1])+" · "+n+" to do · "+done+" complete";
   if(S.calView==="week")
     return n?(n+" scheduled this week"):"Nothing scheduled this week yet.";
   return n?(n+" scheduled in "+MONTHS[S.m]):"Nothing scheduled in "+MONTHS[S.m]+" yet.";
@@ -310,33 +308,35 @@ function activeFilters(){
 function renderHead(){
   var h=$("head");clear(h);
   var cal=S.view!=="campaigns";
-  var box=el("div","phead"+(S.view==="planner"?" is-planner":""));
+  var box=el("div","phead"+(S.view==="planner"?" is-planner":"")+(S.view==="calendar"&&S.calView==="next7"?" is-weekly":""));
   var heading=el("div","pheading"),intro=el("div");
   intro.appendChild(el("p","eyebrow",S.view==="planner"?"Publishing schedule":cal?"Daily work":"Campaign planning"));
   intro.appendChild(el("h1",null,headTitle()));
   intro.appendChild(el("p","psub",headSub()));heading.appendChild(intro);
   var add=el("button","btn btn-p","+ "+(!cal?"New campaign":"New activity"));add.id="new-act";
   add.hidden=S.loading||!S.me||!writable()||(!S.campaigns.length&&S.view!=="planner");
-  add.onclick=!cal?function(){openCampaign(null)}:function(){openActivity(null,S.view==="planner"?(S.plannerStart||TODAY):S.calView==="next7"?S.focusDay:undefined)};
+  add.onclick=!cal?function(){openCampaign(null)}:function(){var range=viewRange();openActivity(null,S.view==="planner"?(S.plannerStart||TODAY):S.calView==="next7"?(S.focusDay||(TODAY>=range[0]&&TODAY<=range[1]?TODAY:range[0])):undefined)};
   heading.appendChild(add);box.appendChild(heading);
   if(S.me&&!S.loading&&writable()){
     var rules=el("button","text-button sop-manage","SOP library");rules.onclick=openSopRules;heading.insertBefore(rules,add);
   }
   var ctl=el("div","pctl");
   if(S.me){var scope=el("div","work-scope");scope.setAttribute("role","group");scope.setAttribute("aria-label","Work visibility");[["my","My work"],["team","Team work"]].forEach(function(option){var button=el("button",S.workScope===option[0]?"on":"",option[1]);button.setAttribute("aria-pressed",String(S.workScope===option[0]));button.onclick=function(){S.workScope=option[0];S.filters.owner="";render()};scope.appendChild(button)});ctl.appendChild(scope)}
-  if(S.view==="calendar"&&(S.calView==="week"||S.calView==="month")){
+  if(S.view==="calendar"&&(S.calView==="next7"||S.calView==="week"||S.calView==="month")){
+    var weekly=S.calView==="next7"||S.calView==="week";
     var nav=el("div","nav");
-    var pv=el("button",null,"‹");pv.setAttribute("aria-label","Previous");
-    pv.onclick=function(){step(-1)};
-    var nx=el("button",null,"›");nx.setAttribute("aria-label","Next");
-    nx.onclick=function(){step(1)};
+    var pv=el("button",null,"‹");pv.setAttribute("aria-label",weekly?"Previous week":"Previous");pv.title=weekly?"Previous week":"Previous month";
+    pv.id="calendar-previous";pv.onclick=function(){step(-1);focusWithoutScroll($("calendar-previous"))};
+    var nx=el("button",null,"›");nx.setAttribute("aria-label",weekly?"Next week":"Next");nx.title=weekly?"Next week":"Next month";
+    nx.id="calendar-next";nx.onclick=function(){step(1);focusWithoutScroll($("calendar-next"))};
     nav.appendChild(pv);nav.appendChild(nx);ctl.appendChild(nav);
-    var td=el("button","ghost","Today");
+    var td=el("button","ghost",weekly?"This week":"Today");
     td.onclick=function(){
-      var d=new Date();S.y=d.getFullYear();S.m=d.getMonth();S.anchor=TODAY;
+      var d=new Date();S.y=d.getFullYear();S.m=d.getMonth();S.anchor=TODAY;S.focusDay="";
       clearDayExpand();render();
     };
     ctl.appendChild(td);
+    if(weekly){var jump=input("date",S.focusDay||S.anchor||TODAY),jumpLabel=el("label","weekly-jump","Jump to date");jump.className="weekly-date";jump.setAttribute("aria-label","Jump to date");jump.title="Jump to a date and review its tasks";jump.onchange=function(){if(jump.value&&jump.checkValidity()){S.anchor=jump.value;S.focusDay=jump.value;clearDayExpand();render()}};jumpLabel.appendChild(jump);ctl.appendChild(jumpLabel)}
   }
   if(S.me&&!S.loading&&writable()){var content=el("button","text-button","Content options");content.onclick=function(){openContentOptions()};ctl.appendChild(content)}
   if(S.campaigns.length&&!S.loading){var folds=el("div","work-fold-tools");[["Collapse all",true],["Expand all",false]].forEach(function(option){var button=el("button","text-button",option[0]);button.onclick=function(){foldAllWork(option[1])};folds.appendChild(button)});ctl.appendChild(folds)}
@@ -570,15 +570,17 @@ function dueLeaves(a,from,to){return effectiveWork(a).filter(function(row){retur
 function weekStrip(from,to){
   var map=workByDay(),box=el("div","wstrip"),n=daysBetween(from,to);
   for(var i=0;i<=n;i++){
-    var key=addDays(from,i),items=map[key]||[];
+    var key=addDays(from,i),items=map[key]||[],complete=items.filter(function(row){return row.done}).length,pending=items.length-complete;
     var t=el("button","wday"+(key===TODAY?" today":"")+(items.length?"":" empty")+(S.focusDay===key?" selected":""));
     t.setAttribute("aria-pressed",String(S.focusDay===key));
+    t.setAttribute("data-work-day",key);
     t.setAttribute("aria-label","Show activities for "+fmtLong(key));
-    t.title=fmtLong(key)+" — "+(items.length?items.length+" scheduled":"nothing scheduled")
+    t.setAttribute("aria-description",pending+" to do, "+complete+" complete");
+    t.title=fmtLong(key)+" — "+pending+" to do, "+complete+" complete"
       +". Select to view this day.";
     t.appendChild(el("span","wd",DOW[dowIdx(key)]));
     t.appendChild(el("b",null,String(parseISO(key).getDate())));
-    t.appendChild(el("span","wn",items.length?String(items.length):"—"));
+    t.appendChild(el("span","wn",pending+" to do"));t.appendChild(el("span","wcomplete",complete+" done"));
     t.onclick=function(k){return function(){S.focusDay=S.focusDay===k?"":k;render()}}(key);
     box.appendChild(t);
   }
@@ -592,7 +594,7 @@ function focusChecklist(host,a,from,to){
   if(open){var full=el("div","focus-full-checklist");full.appendChild(el("p","hint","Full checklist · Includes completed steps and steps with other dates or no deadline."));full.appendChild(subtaskTree(a));host.appendChild(full)}return open;
 }
 
-/* Today and Next 7 days: everything in play, campaign by campaign,
+/* Today and Weekly: work stays grouped by campaign and task,
    with the range's subtasks under the task they belong to */
 function renderFocus(box,from,to,showDates){
   var rows=workItems().filter(function(row){return row.due&&row.due>=from&&row.due<=to});
@@ -648,12 +650,11 @@ function renderCalendar(main){
     var selected=v==="today"?TODAY:(S.focusDay&&S.focusDay>=r[0]&&S.focusDay<=r[1]?S.focusDay:"");
     if(v==="next7")box.appendChild(weekStrip(r[0],r[1]));
     if(selected||v==="today"){
-      if(v==="next7"){var selectedHead=el("div","day-focus");selectedHead.appendChild(el("h2",null,selected===TODAY?"Today · "+fmtLong(selected):fmtLong(selected)));var allDays=el("button","text-button","Show all 7 days");allDays.onclick=function(){S.focusDay="";render()};selectedHead.appendChild(allDays);box.appendChild(selectedHead)}
+      if(v==="next7"){var selectedHead=el("div","day-focus");selectedHead.appendChild(el("h2",null,selected===TODAY?"Today · "+fmtLong(selected):fmtLong(selected)));var allDays=el("button","text-button","Show full week");allDays.onclick=function(){S.focusDay="";render()};selectedHead.appendChild(allDays);box.appendChild(selectedHead)}
       if(selected===TODAY){var overdue=overdueBlock();if(overdue)box.appendChild(overdue)}
       if(!renderFocus(box,selected,selected,false))box.appendChild(el("div","note",S.workScope==="my"?"No work assigned to you on this date. Switch to Team work to see the team’s plan.":"No work due on this date."));
     }else{
-      var overdue=overdueBlock();if(overdue)box.appendChild(overdue);var total=0;
-      for(var day=0;day<7;day++){var date=addDays(TODAY,day),holder=el("section","work-day"),title=day===0?"Today":day===1?"Tomorrow":DOW[dowIdx(date)];holder.appendChild(el("h2","work-day-title",title+" · "+fmtShort(date)));var count=renderFocus(holder,date,date,true);if(!count)holder.appendChild(el("p","hint","Nothing due"));total+=count;box.appendChild(holder)}
+      for(var day=0;day<7;day++){var date=addDays(r[0],day),holder=el("section","work-day"),title=date===TODAY?"Today":date===addDays(TODAY,1)?"Tomorrow":date===addDays(TODAY,-1)?"Yesterday":DOW[dowIdx(date)];holder.setAttribute("data-work-date",date);holder.appendChild(el("h2","work-day-title",title+" · "+fmtShort(date)));var count=renderFocus(holder,date,date,true);if(!count)holder.appendChild(el("p","hint","Nothing due"));box.appendChild(holder)}
     }
     var undated=workItems().filter(function(row){return !row.due&&!row.done}).length;if(undated)box.appendChild(el("div","note",undated+" work items need a parent deadline before they can appear on the calendar."));
     if(S.workScope==="team"){var unassigned=workItems().filter(function(row){return !row.owner&&!row.done}).length;if(unassigned)box.appendChild(el("p","hint",unassigned+" work items have no owner. Assign a parent or individual owner so they appear in My work."))}
@@ -1705,7 +1706,7 @@ function noResults(title,message){
 
 /* ─── render root ───────────────────────────────────────── */
 /* One switcher for every place you can be, calendar views and campaigns alike. */
-var VIEWS=[["today","Today"],["next7","Next 7 days"],["week","Week"],
+var VIEWS=[["today","Today"],["next7","Weekly"],
            ["month","Month"],["planner","Planner"],["campaigns","Campaigns"]];
 function renderViews(){
   var w=$("vsw");clear(w);
@@ -2649,7 +2650,7 @@ setPhone();
 window.addEventListener("resize",function(){if(setPhone())render()});
 
 function step(n){
-  if(S.calView==="week"){S.anchor=addDays(weekStart(S.anchor||TODAY),n*7)}
+  if(S.calView==="next7"||S.calView==="week"){S.anchor=addDays(weekStart(S.anchor||TODAY),n*7);S.focusDay=""}
   else{S.m+=n;if(S.m<0){S.m=11;S.y--}if(S.m>11){S.m=0;S.y++}}
   clearDayExpand();render();
 }
