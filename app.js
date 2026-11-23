@@ -18,7 +18,7 @@ var FORMATS=[
   {id:"Short",label:"Short",group:"YouTube",platforms:["YouTube"],cta:true,
    angles:["Motivational (nursing story)","Strategy / salary","Academic","Testimonial — user","Testimonial — topper","Promotional","Updates"]},
   {id:"NASHTA/PreBoard",label:"NASHTA/PreBoard",group:"Tests",platforms:[],angles:[]},
-  {id:"Post",label:"Post",group:"Other",platforms:["Facebook"],angles:[]},
+  {id:"Post",label:"Post",group:"Other",platforms:["Instagram","Facebook"],angles:[]},
   {id:"Push notification",label:"Push notification",group:"Other",platforms:["Push"],angles:[]},
   {id:"WhatsApp broadcast",label:"WhatsApp broadcast",group:"Other",platforms:["WhatsApp"],angles:[]},
   {id:"Telegram post",label:"Telegram post",group:"Other",platforms:["Telegram"],angles:[]},
@@ -106,8 +106,16 @@ function topicLabel(id,format,platform){var t=contentTopics(platform,format,true
 function platformOptions(current){var out=CONTENT_OPTIONS.platforms.filter(function(p){return !p.archived||p.id===current}).map(function(p){return[p.id,p.label+(p.archived?" (archived)":"")]});if(current&&!out.some(function(p){return p[0]===current}))out.push([current,platformLabel(current)]);return out}
 function contentPlatformSelect(current,blank){return dropdown(platformOptions(current),current||"",blank)}
 function setContentOptions(options){
-  CONTENT_OPTIONS=JSON.parse(JSON.stringify(options));PLATFORMS=CONTENT_OPTIONS.platforms.filter(function(p){return !p.archived}).map(function(p){return[p.id,p.abbr||p.label.slice(0,3).toUpperCase(),p.label]});var all=[];
+  CONTENT_OPTIONS=plannerContentOptions(options);PLATFORMS=CONTENT_OPTIONS.platforms.filter(function(p){return !p.archived}).map(function(p){return[p.id,p.abbr||p.label.slice(0,3).toUpperCase(),p.label]});var all=[];
   CONTENT_OPTIONS.platforms.forEach(function(p){p.formats.forEach(function(f){var known=all.find(function(x){return x.id===f.id}),original=DEFAULT_FORMATS.find(function(x){return x.id===f.id});if(!known){known={id:f.id,label:f.label,group:original?original.group:p.label,platforms:[],angles:[],cta:!!(original&&original.cta)};all.push(known)}if(!p.archived&&!f.archived){known.platforms.push(p.id);f.topics.filter(function(t){return !t.archived}).forEach(function(t){if(known.angles.indexOf(t.id)<0)known.angles.push(t.id)})}})});FORMATS=all;
+}
+/* Older saved option lists predate Instagram Post. Keep existing names, IDs
+   and archived choices; add only the missing branch without rewriting tasks. */
+function plannerContentOptions(options){
+  var next=JSON.parse(JSON.stringify(options)),instagram=next.platforms.find(function(p){return p.id==="Instagram"}),post;
+  next.platforms.some(function(p){post=p.formats.find(function(f){return f.id==="Post"});return !!post});
+  if(instagram&&!instagram.formats.some(function(f){return f.id==="Post"||normalizeSopName(f.label)===normalizeSopName(post?post.label:"Post")}))instagram.formats.push({id:"Post",label:post?post.label:"Post",archived:false,topics:[]});
+  return next;
 }
 function replaceSelect(select,next){var value=next.value,attrs=Array.from(select.attributes).map(function(a){return[a.name,a.value]});clear(select);while(next.firstChild)select.appendChild(next.firstChild);select.value=value;select.disabled=next.disabled;attrs.forEach(function(a){if(a[0]!=="disabled")select.setAttribute(a[0],a[1])})}
 function validateContentOptions(options){
@@ -129,7 +137,7 @@ var S={campaigns:[],activities:[],view:"calendar",calView:"next7",workScope:"my"
   loading:true,stale:false,err:null,canWrite:null,open:null,expanded:{},focusAdd:null,lastAdd:{},
   placeFor:null,showFilters:false,me:null,team:[],members:[],userRoster:[],ownerAliases:{},membersReady:false,teamError:"",workCollapsed:{},
   profiles:{},dayMax:3,query:"",focusDay:"",templates:[],templateError:"",templatesLoading:true,
-  sopRules:[],sopReady:false,contentOptionsReady:false,contentOptionsError:""};
+  sopRules:[],sopReady:false,contentOptionsReady:false,contentOptionsError:"",plannerStart:"",plannerPlatform:""};
 var db=null,U=null,phone=false;
 var $=function(id){return document.getElementById(id)};
 
@@ -261,6 +269,7 @@ function initials(n){
 /* The page says, in words, what this screen is for. One job, one title. */
 function headTitle(){
   if(S.view==="campaigns")return "Campaigns";
+  if(S.view==="planner")return "Content planner";
   if(S.calView==="today")return "Today";
   if(S.calView==="next7")return "Next 7 days";
   if(S.calView==="week"){
@@ -271,6 +280,7 @@ function headTitle(){
 }
 function headSub(){
   if(S.loading)return "Loading the team's plan…";
+  if(S.view==="planner"){var plan=plannerSchedule();return rangeLabel(plan.start,plan.end)+" · "+plan.total+" scheduled "+(plan.total===1?"activity":"activities")}
   if(S.view==="campaigns"){
     if(!S.campaigns.length)return "Nothing planned yet.";
     if(S.query||activeFilters().length){var matches=S.campaigns.filter(campaignMatches).length;return matches+" matching "+(matches===1?"campaign":"campaigns")}
@@ -299,22 +309,22 @@ function activeFilters(){
 }
 function renderHead(){
   var h=$("head");clear(h);
-  var cal=S.view==="calendar";
-  var box=el("div","phead");
+  var cal=S.view!=="campaigns";
+  var box=el("div","phead"+(S.view==="planner"?" is-planner":""));
   var heading=el("div","pheading"),intro=el("div");
-  intro.appendChild(el("p","eyebrow",cal?"Daily work":"Campaign planning"));
+  intro.appendChild(el("p","eyebrow",S.view==="planner"?"Publishing schedule":cal?"Daily work":"Campaign planning"));
   intro.appendChild(el("h1",null,headTitle()));
   intro.appendChild(el("p","psub",headSub()));heading.appendChild(intro);
   var add=el("button","btn btn-p","+ "+(!cal?"New campaign":"New activity"));add.id="new-act";
-  add.hidden=S.loading||!S.me||!writable()||!S.campaigns.length;
-  add.onclick=!cal?function(){openCampaign(null)}:function(){openActivity(null,S.calView==="next7"?S.focusDay:undefined)};
+  add.hidden=S.loading||!S.me||!writable()||(!S.campaigns.length&&S.view!=="planner");
+  add.onclick=!cal?function(){openCampaign(null)}:function(){openActivity(null,S.view==="planner"?(S.plannerStart||TODAY):S.calView==="next7"?S.focusDay:undefined)};
   heading.appendChild(add);box.appendChild(heading);
   if(S.me&&!S.loading&&writable()){
     var rules=el("button","text-button sop-manage","SOP library");rules.onclick=openSopRules;heading.insertBefore(rules,add);
   }
   var ctl=el("div","pctl");
   if(S.me){var scope=el("div","work-scope");scope.setAttribute("role","group");scope.setAttribute("aria-label","Work visibility");[["my","My work"],["team","Team work"]].forEach(function(option){var button=el("button",S.workScope===option[0]?"on":"",option[1]);button.setAttribute("aria-pressed",String(S.workScope===option[0]));button.onclick=function(){S.workScope=option[0];S.filters.owner="";render()};scope.appendChild(button)});ctl.appendChild(scope)}
-  if(cal&&(S.calView==="week"||S.calView==="month")){
+  if(S.view==="calendar"&&(S.calView==="week"||S.calView==="month")){
     var nav=el("div","nav");
     var pv=el("button",null,"‹");pv.setAttribute("aria-label","Previous");
     pv.onclick=function(){step(-1)};
@@ -331,7 +341,7 @@ function renderHead(){
   if(S.me&&!S.loading&&writable()){var content=el("button","text-button","Content options");content.onclick=function(){openContentOptions()};ctl.appendChild(content)}
   if(S.campaigns.length&&!S.loading){var folds=el("div","work-fold-tools");[["Collapse all",true],["Expand all",false]].forEach(function(option){var button=el("button","text-button",option[0]);button.onclick=function(){foldAllWork(option[1])};folds.appendChild(button)});ctl.appendChild(folds)}
   var late=workItems().filter(function(row){return row.due&&row.due<TODAY&&!row.done}).length;
-  if(late&&!(cal&&S.calView==="today")){
+  if(late&&!(S.view==="calendar"&&S.calView==="today")){
     var ob=el("button","alert-pill",late+" overdue");
     ob.title="Show them on Today";
     ob.onclick=function(){S.view="calendar";S.calView="today";clearDayExpand();render()};
@@ -439,7 +449,7 @@ function workFoldButton(kind,id,title,body){
   button.onclick=function(){S.workCollapsed[key]=!S.workCollapsed[key];rememberWorkFolds();document.querySelectorAll("[data-work-fold]").forEach(function(peer){if(peer.getAttribute("data-work-fold")===key)draw(peer)})};return button;
 }
 function foldAllWork(closed){
-  S.campaigns.forEach(function(c){S.workCollapsed["campaign:"+c.id]=closed;S.expanded["c"+c.id]=!closed});S.activities.forEach(function(a){S.workCollapsed["task:"+a.id]=closed;S.expanded["a"+a.id]=!closed;effectiveWork(a).forEach(function(row){if(kids(row.n).length){S.workCollapsed["group:"+row.id]=closed;S.expanded["n"+row.id]=!closed}})});rememberWorkFolds();render();
+  S.campaigns.forEach(function(c){S.workCollapsed["campaign:"+c.id]=closed;S.expanded["c"+c.id]=!closed});S.activities.forEach(function(a){S.workCollapsed["task:"+a.id]=closed;S.workCollapsed["planner-task:"+a.id]=closed;S.expanded["a"+a.id]=!closed;effectiveWork(a).forEach(function(row){if(kids(row.n).length){S.workCollapsed["group:"+row.id]=closed;S.expanded["n"+row.id]=!closed}})});if(S.view==="planner")plannerSchedule().days.forEach(function(day){S.workCollapsed["planner-day:"+day.date]=closed});rememberWorkFolds();render();
 }
 function renderWorkCampaigns(host,rows,options){
   options=options||{};S.campaigns.forEach(function(c){var entries=rows.filter(function(row){return row.a.campaignId===c.id});if(!entries.length)return;
@@ -594,6 +604,37 @@ function overdueBlock(){
   var pending=rows.filter(function(row){return !row.done}).length,complete=rows.length-pending,box=el("details","od work-overdue"),summary=el("summary","od-h",(pending?"Overdue · "+pending:"Earlier deadlines")+(complete?" · "+complete+" complete":"")+" · Review separately");box.open=!!S.expanded.workOverdue;box.ontoggle=function(){S.expanded.workOverdue=box.open};box.appendChild(summary);box.appendChild(el("p","hint","Earlier deadlines stay here. Completed items keep their place in each checklist."));renderWorkCampaigns(box,rows,{compact:true});return box;
 }
 
+/* The publishing planner uses activity dates. Checklist deadlines keep their
+   context inside the activity and continue to drive the existing work views. */
+var PLANNER_PLATFORMS=[{id:"YouTube",columns:[{id:"Live",label:"Live"},{id:"Long form",label:"Long Form"},{id:"Short",label:"Shorts"}]},{id:"Instagram",columns:[{id:"Reel",label:"Reel"},{id:"Post",label:"Post"},{id:"Carousel",label:"Carousel"}]}];
+function plannerPlatforms(){return PLANNER_PLATFORMS.filter(function(p){return !S.plannerPlatform||p.id===S.plannerPlatform})}
+function plannerColumns(){var columns=[];plannerPlatforms().forEach(function(p){p.columns.forEach(function(c){var formats=contentFormats(p.id,true),format=formats.find(function(f){return f.id===c.id});if(!format&&c.id==="Post")format=formats.find(function(f){return normalizeSopName(f.label)===normalizeSopName(formatLabel("Post")||"Post")});var original=DEFAULT_FORMATS.find(function(f){return f.id===c.id});columns.push({platform:p.id,format:format?format.id:c.id,label:format&&original&&format.label!==original.label?format.label:c.label})})});return columns}
+function plannerSchedule(list){
+  var start=S.plannerStart||TODAY,end=addDays(start,6),columns=plannerColumns(),platforms=plannerPlatforms().map(function(p){return p.id}),activities=(list||visible()).filter(function(a){return (a.platforms||[]).some(function(p){return platforms.indexOf(p)>=0})}),days=[],other=[],undated=[],total=0;
+  for(var i=0;i<7;i++)days.push({date:addDays(start,i),cells:columns.map(function(column){return {column:column,activities:[]}}),count:0});
+  activities.forEach(function(a){if(!a.dueDate){undated.push(a);return}if(a.dueDate<start||a.dueDate>end)return;total++;var day=days[daysBetween(start,a.dueDate)],matched=false;day.cells.forEach(function(cell){if(a.type===cell.column.format&&(a.platforms||[]).indexOf(cell.column.platform)>=0){cell.activities.push(a);matched=true}});day.count++;if(!matched)other.push(a)});
+  days.forEach(function(day){day.cells.forEach(function(cell){cell.activities.sort(function(a,b){return (a.dueTime||"99").localeCompare(b.dueTime||"99")})})});return {start:start,end:end,columns:columns,days:days,total:total,other:other,undated:undated};
+}
+function plannerCard(a){
+  var card=el("article","planner-card"+(a.status==="Published"?" is-done":"")),campaign=campById(a.campaignId),head=el("div","planner-card-head"),title=el("button","planner-card-title",a.title),rows=effectiveWork(a).filter(function(row){return !kids(row.n).length&&ownerInScope(row.owner)});
+  card.setAttribute("data-planner-activity",a.id);card.style.setProperty("--c",campColor(a.campaignId));card.appendChild(el("p","planner-campaign",campaign?campaign.name:"No campaign"));if(ownerInScope(a.owner||""))head.appendChild(completionControl(a));title.setAttribute("data-focus-key","activity:"+a.id);title.setAttribute("aria-label","Open activity: "+a.title);title.onclick=function(){openActivity(a)};head.appendChild(title);card.appendChild(head);
+  var meta=el("div","planner-card-meta");meta.appendChild(el("span","planner-status",a.status||"Not started"));if(a.dueTime)meta.appendChild(dueTimeBadge(a.dueTime));if(a.angle)meta.appendChild(el("span","planner-topic",topicLabel(a.angle,a.type,(a.platforms||[])[0])));if(a.owner)meta.appendChild(uname(a.owner));card.appendChild(meta);
+  if(rows.length){var body=el("div","planner-checklist"),key="planner-task:"+a.id;if(S.workCollapsed[key]===undefined)S.workCollapsed[key]=true;var tree=workGroup({a:a,rows:rows},{compact:true}).querySelector(".work-group-body");tree.hidden=false;body.appendChild(tree);var bar=el("div","planner-checklist-bar"),toggle=workFoldButton("planner-task",a.id,a.title,body),count=el("button","planner-checklist-count",rows.filter(function(row){return row.done}).length+"/"+rows.length+" subtasks");count.setAttribute("aria-label","Toggle subtasks: "+a.title);count.onclick=function(){toggle.click()};bar.appendChild(toggle);bar.appendChild(count);card.appendChild(bar);card.appendChild(body)}
+  return card;
+}
+function plannerCell(cell,date){
+  var body=el("div","planner-cell");body.setAttribute("data-planner-date",date);body.setAttribute("data-planner-platform",cell.column.platform);body.setAttribute("data-planner-format",cell.column.format);
+  cell.activities.forEach(function(a){body.appendChild(plannerCard(a))});
+  if(S.me&&writable()){var add=el("button","planner-add",cell.activities.length?"+ Add activity":"+ Plan activity"),p=contentPlatform(cell.column.platform),f=contentFormats(cell.column.platform).find(function(f){return f.id===cell.column.format});add.setAttribute("aria-label","Plan "+platformLabel(cell.column.platform)+" "+cell.column.label+" on "+fmtLong(date));add.setAttribute("data-focus-key","planner-add:"+date+":"+cell.column.platform+":"+cell.column.format);add.disabled=!p||p.archived||!f||!S.contentOptionsReady;add.title=add.disabled?"Restore this platform and format in Content options before planning new work.":"Create an activity for this day and format";add.onclick=function(){openActivity(null,date,undefined,{type:cell.column.format,platforms:[cell.column.platform]})};body.appendChild(add)}else if(!cell.activities.length)body.appendChild(el("span","planner-empty","Nothing planned"));return body;
+}
+function renderPlanner(main){
+  var box=el("section","planner");box.setAttribute("aria-label","Day-wise publishing planner");main.appendChild(box);if(S.loading){box.appendChild(el("p","note","Loading the publishing schedule…"));return}
+  var plan=plannerSchedule(),toolbar=el("div","planner-toolbar"),nav=el("div","nav"),previous=el("button",null,"‹"),next=el("button",null,"›"),today=el("button","ghost","Today");previous.setAttribute("aria-label","Previous planner week");next.setAttribute("aria-label","Next planner week");previous.onclick=function(){S.plannerStart=addDays(plan.start,-7);render()};next.onclick=function(){S.plannerStart=addDays(plan.start,7);render()};today.onclick=function(){S.plannerStart=TODAY;render()};nav.appendChild(previous);nav.appendChild(next);toolbar.appendChild(nav);toolbar.appendChild(today);
+  var date=input("date",plan.start);date.setAttribute("aria-label","Planner start date");date.onchange=function(){if(date.value&&date.checkValidity()){S.plannerStart=date.value;render()}};toolbar.appendChild(date);var platforms=el("div","work-scope planner-platforms");platforms.setAttribute("role","group");platforms.setAttribute("aria-label","Planner platforms");[["","Both platforms"],["YouTube",platformLabel("YouTube")],["Instagram",platformLabel("Instagram")]].forEach(function(option){var button=el("button",S.plannerPlatform===option[0]?"on":"",option[1]);button.setAttribute("aria-pressed",String(S.plannerPlatform===option[0]));button.onclick=function(){S.plannerPlatform=option[0];render()};platforms.appendChild(button)});toolbar.appendChild(platforms);box.appendChild(toolbar);box.appendChild(el("p","planner-help","Activities appear on their due date. Expand subtasks to see the checklist and its separate deadlines."));
+  if(phone){plan.days.forEach(function(day,index){var section=el("details","planner-mobile-day"+(day.date===TODAY?" is-today":"")),key="planner-day:"+day.date;section.open=S.workCollapsed[key]===undefined?index===0:!S.workCollapsed[key];var summary=el("summary"),label=(day.date===TODAY?"Today":day.date===addDays(TODAY,1)?"Tomorrow":DOW[dowIdx(day.date)])+" · "+fmtShort(day.date);summary.appendChild(el("strong",null,label));summary.appendChild(el("span",null,day.count+" planned"));section.appendChild(summary);section.ontoggle=function(){S.workCollapsed[key]=!section.open;rememberWorkFolds()};plannerPlatforms().forEach(function(platform){var group=el("div","planner-mobile-platform");group.appendChild(el("h3",null,platformLabel(platform.id)));day.cells.filter(function(cell){return cell.column.platform===platform.id}).forEach(function(cell){var lane=el("div","planner-mobile-lane");lane.appendChild(el("h4",null,cell.column.label));lane.appendChild(plannerCell(cell,day.date));group.appendChild(lane)});section.appendChild(group)});box.appendChild(section)})}
+  else{var scroll=el("div","planner-scroll"),table=el("table","planner-table"),caption=el("caption","sr-only","Publishing schedule, "+rangeLabel(plan.start,plan.end)),thead=el("thead"),platformRow=el("tr"),formatRow=el("tr"),dayHeader=el("th",null,"Day");scroll.setAttribute("tabindex","0");scroll.setAttribute("role","region");scroll.setAttribute("aria-label","Publishing schedule table");table.appendChild(caption);dayHeader.rowSpan=2;dayHeader.scope="col";platformRow.appendChild(dayHeader);plannerPlatforms().forEach(function(p){var heading=el("th","planner-platform-heading",platformLabel(p.id));heading.colSpan=3;heading.scope="colgroup";platformRow.appendChild(heading)});plan.columns.forEach(function(c){var heading=el("th","planner-format-heading",c.label);heading.scope="col";formatRow.appendChild(heading)});thead.appendChild(platformRow);thead.appendChild(formatRow);table.appendChild(thead);var tbody=el("tbody");plan.days.forEach(function(day){var row=el("tr",day.date===TODAY?"planner-today":""),dateCell=el("th","planner-day-label");dateCell.scope="row";dateCell.appendChild(el("strong",null,day.date===TODAY?"Today":day.date===addDays(TODAY,1)?"Tomorrow":DOW[dowIdx(day.date)]));dateCell.appendChild(el("span",null,fmtShort(day.date)));dateCell.appendChild(el("small",null,day.count+" planned"));row.appendChild(dateCell);day.cells.forEach(function(cell){var td=el("td");td.appendChild(plannerCell(cell,day.date));row.appendChild(td)});tbody.appendChild(row)});table.appendChild(tbody);scroll.appendChild(table);box.appendChild(scroll)}
+  [[plan.other,"Other formats","These activities use formats outside the six Planner columns."],[plan.undated,"Needs a date","Set an activity due date to place it in the publishing schedule."]].forEach(function(extra){if(!extra[0].length)return;var details=el("details","planner-extras"),summary=el("summary",null,extra[1]+" · "+extra[0].length);details.appendChild(summary);details.appendChild(el("p","hint",extra[2]));var list=el("div","planner-extra-cards");extra[0].forEach(function(a){var wrapper=el("div"),context=[a.dueDate?fmtShort(a.dueDate):"No date",formatLabel(a.type,(a.platforms||[])[0])].filter(Boolean).join(" · ");wrapper.appendChild(el("p","hint",context));wrapper.appendChild(plannerCard(a));list.appendChild(wrapper)});details.appendChild(list);box.appendChild(details)});
+}
 function renderCalendar(main){
   var box=el("div","cal");
   if(S.loading){
@@ -1665,12 +1706,12 @@ function noResults(title,message){
 /* ─── render root ───────────────────────────────────────── */
 /* One switcher for every place you can be, calendar views and campaigns alike. */
 var VIEWS=[["today","Today"],["next7","Next 7 days"],["week","Week"],
-           ["month","Month"],["campaigns","Campaigns"]];
+           ["month","Month"],["planner","Planner"],["campaigns","Campaigns"]];
 function renderViews(){
   var w=$("vsw");clear(w);
   VIEWS.forEach(function(v){
-    var isC=v[0]==="campaigns";
-    var on=isC?(S.view==="campaigns"):(S.view==="calendar"&&S.calView===v[0]);
+    var isC=v[0]==="campaigns",isP=v[0]==="planner";
+    var on=isC||isP?S.view===v[0]:(S.view==="calendar"&&S.calView===v[0]);
     var b=el("button",null,v[1]);
     b.setAttribute("role","tab");
     b.setAttribute("aria-selected",on?"true":"false");
@@ -1681,7 +1722,7 @@ function renderViews(){
       w.children[next].click();$("vsw").children[next].focus();
     };
     b.onclick=function(){
-      if(isC)S.view="campaigns";
+      if(isC||isP)S.view=v[0];
       else{
         S.view="calendar";S.calView=v[0];
         if(v[0]==="week"&&!S.anchor)S.anchor=TODAY;
@@ -1732,9 +1773,9 @@ function renderMain(){
     var sb=el("div","banner");sb.appendChild(el("span",null,"◷"));
     sb.appendChild(el("span",null,"Still loading the team's campaigns…"));main.appendChild(sb);
   }
-  if(S.view==="calendar"&&(S.query||activeFilters().length)&&!visible().length&&!S.loading){
+  if(S.view!=="campaigns"&&(S.query||activeFilters().length)&&!visible().length&&!S.loading){
     main.appendChild(noResults("No matching activities","Try another search or clear your filters."));
-  }else if(S.view==="calendar")renderCalendar(main);else renderCampaigns(main);
+  }else if(S.view==="calendar")renderCalendar(main);else if(S.view==="planner")renderPlanner(main);else renderCampaigns(main);
   if(S.focusAdd){
     var f=main.querySelector('[data-focus="'+S.focusAdd+'"]');
     S.focusAdd=null;

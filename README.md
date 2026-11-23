@@ -7,12 +7,28 @@ whole team sees live.
   levels deep, with groups that roll up their progress.
 - Activities carry format, topic, CTA, platforms, end date and time, owner,
   keywords and a script. Subtasks carry their own platform, type, owner and date.
-- Five views: **Today**, **Next 7 days**, **Week**, **Month**, **Campaigns**.
+- Six views: **Today**, **Next 7 days**, **Week**, **Month**, **Planner**, **Campaigns**.
 
 No build step. Static files, Firestore for data, Firebase Auth for sign-in.
 
 ## Workspace experience
 
+- **Planner** is a day-wise publishing schedule with grouped columns:
+  **YouTube → Live / Long Form / Shorts** and **Instagram → Reel / Post / Carousel**.
+  It opens on today and the following six days; arrows move seven days at a time,
+  the date picker jumps to any start date, and Today returns to the current date.
+  Switch between both platforms or one platform. Activities appear on their own
+  due dates; checklist deadlines stay inside the activity and drive the existing
+  daily work views. Campaign names, owner, status and set due times remain visible.
+  Cell **+ Plan activity** opens the existing task form with date, platform and
+  format prefilled. Completing/editing updates the same activity everywhere;
+  completed cards keep their position. Expand subtasks for the original hierarchy,
+  individual checkboxes and separate deadlines. Search, filters and My/Team apply.
+  Other formats and activities without dates remain available in separate sections.
+  Mobile uses collapsible days with labeled platform/format sections instead of a
+  compressed six-column table. Collapse/Expand all includes these days/checklists.
+  Instagram Post is added to older content-option lists if absent; existing IDs,
+  names and archived options are retained, and no activities or SOPs are rewritten.
 - **My work** is the default visibility, with **Team work** available in every
   view. My work includes subtasks assigned to you inside another owner's activity.
   Blank subtask owners inherit the nearest parent owner. New activities default
@@ -48,7 +64,7 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
   its original checklist position with a checked box and strikethrough; completion
   and reopening never reorder or move items into another section. **Show full
   checklist** reveals the scoped hierarchy, including other dates and completed steps.
-- Task and subtask checkboxes work in all five views and save to the same campaign
+- Task and subtask checkboxes work in all views and save to the same campaign
   checklist. Completing a group confirms before marking its descendants complete.
   Completing an activity marks it Published, with a warning if its checklist is
   unfinished; subtasks keep their own progress. Every checkbox supports reopening.
@@ -308,6 +324,9 @@ independence, progress resets, date shifts and recurrence boundaries. With
 `playwright` installed or available on `NODE_PATH`, `node tests/reuse-ui.cjs`
 checks the browser flows in Chrome, including mobile layout and failed-write
 recovery. The browser test uses an in-memory database and never contacts Firebase.
+`node tests/planner.test.cjs` checks publishing lanes, date boundaries, visibility
+and safe content-option upgrades. `node tests/reuse-ui.cjs --planner-only` runs
+the Planner's creation, editing, completion, filters and mobile checks in isolation.
 
 ## Gemini video task planning setup
 
