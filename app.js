@@ -794,7 +794,7 @@ function renderCampaigns(main){
     if(open&&writable())card.appendChild(quickAdd(c));
     else if(!acts.length&&writable()){
       var nb=el("button","link","+ Add the first activity");
-      nb.onclick=function(){S.expanded["c"+c.id]=true;S.focusAdd="c"+c.id;render()};
+      nb.onclick=function(){S.expanded["c"+c.id]=true;S.workCollapsed["campaign:"+c.id]=false;rememberWorkFolds();S.focusAdd="c"+c.id;render()};
       card.appendChild(nb);
     }
     wrap.appendChild(card);
