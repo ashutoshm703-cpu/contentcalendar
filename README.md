@@ -81,10 +81,13 @@ No build step. Static files, Firestore for data, Firebase Auth for sign-in.
 - **Content options** beside My work / Team work (also in the account menu)
   manages shared **Platform → Format → Topic/category** dropdown choices.
   Select a platform to add or rename its formats, then select a format to manage
-  its topics. Save options makes these choices available to the whole team in
+  its topics. Add fields stay at the top of each column; type a name and click
+  **Add** or press Enter. Each row has **Remove**, with **Undo** for the latest
+  change. Removed choices stay hidden; **Show removed options → Restore** brings
+  them back. **Save options** makes these choices available to the whole team in
   task/subtask forms, SOP conditions, Quick Add and filters. Changing a parent
   clears incompatible choices below it. Duplicate names within a list are blocked.
-  Archive/restore hides or restores choices without changing saved tasks or SOP
+  Remove/restore hides or restores choices without changing saved tasks or SOP
   conditions; renaming keeps stable IDs. Concurrent edits require reopening the
   latest list. Formats shared across platforms have a shared name.
 - **NASHTA/PreBoard** identifies a test/assessment, available after choosing a
