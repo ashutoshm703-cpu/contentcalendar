@@ -431,6 +431,35 @@ function workCard(row){
   if(!row.n)wrap.appendChild(chip(row.a));else{var button=el("button","chip work-subtask"),title=el("span","t",row.title),meta=el("div","m");button.setAttribute("data-focus-key","work:"+row.a.id+":"+row.id);button.setAttribute("aria-label","Edit subtask: "+row.title);button.appendChild(title);meta.appendChild(el("span",null,row.a.title));if(row.path)meta.appendChild(el("span",null,row.path));if(row.owner)meta.appendChild(uname(row.owner));button.appendChild(meta);button.onclick=function(){openSubtask(row.a,row.n)};wrap.appendChild(button)}
   var meta=wrap.querySelector(".chip .m");if(meta){if(!row.n)meta.appendChild(row.owner?uname(row.owner):el("span",null,"Unassigned"));if(row.due)meta.appendChild(el("span","work-date",fmtShort(row.due)));if(row.n&&row.dueTime)meta.appendChild(dueTimeBadge(row.dueTime))}return wrap;
 }
+/* Every work row exposes the same named actions without opening its editor. */
+function itemActions(title,key){
+  var wrap=el('div','item-actions'),trigger=el('button','item-actions-trigger','Actions'),menu=el('div','campaign-actions-menu item-actions-menu');
+  trigger.type='button';trigger.setAttribute('aria-label','Actions for '+title);trigger.setAttribute('aria-haspopup','menu');trigger.setAttribute('aria-expanded','false');trigger.setAttribute('data-focus-key','actions:'+key);
+  var arrow=el('span',null,'▾');arrow.setAttribute('aria-hidden','true');trigger.appendChild(arrow);menu.setAttribute('popover','auto');menu.setAttribute('role','menu');menu.setAttribute('aria-label','Actions for '+title);
+  function close(){if(menu.matches(':popover-open'))menu.hidePopover()}
+  wrap.addAction=function(label,fn,danger){var b=el('button','campaign-menu-command'+(danger?' is-danger':''),label);b.type='button';b.setAttribute('role','menuitem');b.onclick=function(){close();focusWithoutScroll(trigger);fn()};menu.appendChild(b);return b};
+  menu.ontoggle=function(){trigger.setAttribute('aria-expanded',String(menu.matches(':popover-open')))};
+  menu.onkeydown=function(e){var items=Array.from(menu.querySelectorAll('button:not(:disabled)')),i=items.indexOf(document.activeElement);if(['ArrowDown','ArrowUp','Home','End'].indexOf(e.key)>=0){e.preventDefault();items[e.key==='Home'?0:e.key==='End'?items.length-1:(i+(e.key==='ArrowDown'?1:-1)+items.length)%items.length].focus()}else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close();focusWithoutScroll(trigger)}};
+  trigger.onclick=function(e){e.stopPropagation();if(menu.matches(':popover-open')){close();return}menu.showPopover();var r=trigger.getBoundingClientRect(),b=menu.getBoundingClientRect();menu.style.left=Math.max(12,Math.min(r.right-b.width,innerWidth-b.width-12))+'px';menu.style.top=Math.max(12,Math.min(r.bottom+6,innerHeight-b.height-12))+'px';var first=menu.querySelector('button:not(:disabled)');if(first)first.focus()};
+  wrap.appendChild(trigger);wrap.appendChild(menu);return wrap;
+}
+function taskActions(a){
+  var menu=itemActions(a.title,'task:'+a.id);menu.addAction('Edit task',function(){openActivity(a)});menu.addAction('Duplicate',function(){openDuplicate(a,false,false)});
+  if(canDeleteTasks())menu.addAction('Delete',function(){confirmTaskDelete(a)},true);return menu;
+}
+function confirmTaskDelete(a){
+  if(!canDeleteTasks())return;
+  var ui=actionDialog('Delete task?','Delete “'+a.title+'” and its entire checklist? This cannot be undone.'),button=el('button','btn btn-d','Delete task');
+  button.onclick=function(){runDialogSave(ui,button,function(){if(!canDeleteTasks())throw {code:'permission-denied'};return wq.then(function(){return db.doc('activities/'+a.id).delete()})},function(){S.activities=S.activities.filter(function(item){return item.id!==a.id});render();toast('Task deleted')})};ui.error.setAttribute('role','alert');ui.foot.appendChild(button);overlay(ui.node,null,true);focusWithoutScroll(ui.cancel);
+}
+function changeSavedSubtask(a,id,change){
+  var write=wq.then(function(){return db.runTransaction(function(tx){var ref=db.doc('activities/'+a.id);return tx.get(ref).then(function(snap){if(!snap.exists)throw {code:'not-found'};var current=Object.assign({id:a.id},snap.data()),node=nodeById(current.subtasks,id);if(!node)throw {code:'not-found'};var nodes=change(current.subtasks,node);tx.update(ref,{subtasks:nodes});return Object.assign({},current,{subtasks:nodes})})})});
+  wq=write.catch(function(){});return write.then(function(saved){Object.assign(a,saved);S.activities=S.activities.map(function(item){return item.id===a.id?saved:item});return saved});
+}
+function confirmSubtaskDelete(a,s,onSaved){
+  if(!writable())return;var group=kids(s).length>0,ui=actionDialog(group?'Delete group?':'Delete subtask?','Delete “'+s.title+'”'+(group?' and every subtask inside it':'')+'? This cannot be undone.'),button=el('button','btn btn-d',group?'Delete group':'Delete subtask');
+  button.onclick=function(){runDialogSave(ui,button,function(){if(!writable())throw {code:'permission-denied'};return changeSavedSubtask(a,s.id,function(nodes){return removeNode(nodes,s.id)})},function(saved){if(onSaved)onSaved(saved);render();toast(group?'Group deleted':'Subtask deleted')})};ui.error.setAttribute('role','alert');ui.foot.appendChild(button);overlay(ui.node,null,true);focusWithoutScroll(ui.cancel);
+}
 /* Date/owner filters select work, while its original ancestors provide context. */
 function scheduledNodes(a,rows){
   var selected={};rows.forEach(function(row){if(row.n)selected[row.id]=true});
@@ -468,14 +497,14 @@ function workGroup(entry,options){
     var context=el("button","work-parent-context"),title=el("span","work-parent-title",a.title),meta=el("span","work-parent-meta",a.status+" · "+(a.dueDate?"Video deadline "+fmtShort(a.dueDate):"No video deadline"));
     context.setAttribute("aria-label","Open parent task: "+a.title);context.setAttribute("data-focus-key","activity:"+a.id);context.appendChild(title);context.appendChild(meta);if(a.dueTime)context.appendChild(dueTimeBadge(a.dueTime));context.onclick=function(){openActivity(a)};headRow.appendChild(context);
   }
-  heading.appendChild(headRow);if(hasChecklist)heading.appendChild(el("p","work-group-step-count",rows.filter(function(row){return !!row.n}).length+" steps in this view"));group.appendChild(heading);
+  if(writable())headRow.appendChild(taskActions(a));heading.appendChild(headRow);if(hasChecklist)heading.appendChild(el("p","work-group-step-count",rows.filter(function(row){return !!row.n}).length+" steps in this view"));group.appendChild(heading);
   function tree(nodes){var list=el("ul","work-children");nodes.forEach(function(n){var raw=nodeById(a.subtasks,n.id)||n,row=selected[n.id],branch=kids(n).length>0,item=el("li","work-tree-item"),line=el("div","work-tree-row"+(row?" work-card":" work-branch")+(nodeDone(raw)?" is-done":""));item.setAttribute("data-work-node",n.id);
     if(row)line.setAttribute("data-work-id",a.id+":"+n.id);
     var children=branch?tree(kids(n)):null;if(branch)line.appendChild(workFoldButton("group",n.id,n.title,children));
     if(row||(effective[n.id]&&ownerInScope(effective[n.id].owner)))line.appendChild(completionControl(a,raw));
     var content=el("div","work-tree-content"),name=el("button","work-task-title",n.title);name.setAttribute("aria-label","Edit subtask: "+n.title);name.setAttribute("data-focus-key","work:"+a.id+":"+n.id);name.onclick=function(){openSubtask(a,raw)};content.appendChild(name);
     var meta=el("div","work-task-meta"),schedule=effective[n.id]||row;if(branch){var counts=nodeCount(raw);meta.appendChild(el("span",null,counts[0]+" of "+counts[1]+" complete"))}else if(row&&row.owner)meta.appendChild(uname(row.owner));if(schedule&&schedule.due){var date=el("span","work-date",fmtShort(schedule.due));date.title="Subtask deadline";meta.appendChild(date)}if(raw.dueTime)meta.appendChild(dueTimeBadge(raw.dueTime));
-    if(meta.childNodes.length)content.appendChild(meta);line.appendChild(content);item.appendChild(line);if(branch)item.appendChild(children);list.appendChild(item);
+    if(writable()){var location=subtaskLocation(a,n.id);meta.appendChild(subReuseActions(a,raw,location?location.depth:0,function(){render()}))}if(meta.childNodes.length)content.appendChild(meta);line.appendChild(content);item.appendChild(line);if(branch)item.appendChild(children);list.appendChild(item);
   });return list}
   var full=options.focus&&!!S.expanded["focus-subs-"+a.id];if(!full){var nodes=scheduledNodes(a,rows);if(nodes.length)body.appendChild(tree(nodes))}
   if(options.focus)focusChecklist(body,a,options.from,options.to);group.appendChild(body);return group;
@@ -840,8 +869,7 @@ function renderCampaigns(main){
         rm.onclick=function(){openActivity(a)};
         r.appendChild(rm);
         if(writable()){
-          var dup=el("button","edit-campaign campaign-activity-copy","⧉");dup.title='Duplicate activity';dup.setAttribute("aria-label","Duplicate activity "+a.title);
-          dup.onclick=function(){openDuplicate(a,false,false)};r.appendChild(dup);
+          r.appendChild(taskActions(a));
         }
         aw.appendChild(r);
         if(taskOpen)aw.appendChild(subtaskTree(a,true));
@@ -1564,9 +1592,11 @@ function checklistTools(a,onChange){
 }
 function subReuseActions(a,s,depth,onChange){
   s=nodeById(a.subtasks,s.id)||s;
-  var menu=el("details","reuse-menu"),summary=el("summary",null,"⋯");summary.title="Subtask actions";summary.setAttribute("aria-label","Actions for "+s.title);menu.appendChild(summary);
-  function action(label,fn){var b=el("button",null,label);b.onclick=function(){menu.open=false;fn()};menu.appendChild(b)}
-  action("Duplicate",function(){var copy=copyIndependentSubtask(s);copy.title+=" (copy)";a.subtasks=insertAfter(a.subtasks,s.id,copy);onChange();toast("Subtask duplicated")});
+  var menu=itemActions(s.title,'subtask:'+a.id+':'+s.id);menu.classList.add('reuse-menu');
+  function action(label,fn,danger){return menu.addAction(label,fn,danger)}
+  action('Edit subtask',function(){openSubtask(a,s,onChange)});
+  action("Duplicate",function(){var trigger=menu.querySelector('.item-actions-trigger');trigger.disabled=true;changeSavedSubtask(a,s.id,function(nodes,current){var copy=copyIndependentSubtask(current);copy.title+=' (copy)';return insertAfter(nodes,current.id,copy)}).then(function(){if(onChange)onChange();render();toast('Subtask duplicated')}).catch(function(e){toast(msgFor(e))}).finally(function(){trigger.disabled=false})});
+  action('Delete',function(){confirmSubtaskDelete(a,s,onChange)},true);
   if(depth<MAXDEPTH-1&&a.status!=="Published"&&!(s.done&&!kids(s).length))action("Break down with AI",function(){if(hasOverlayChanges()){toast("Save the current details first, then break this task down.");return}openActivityPlanner(a,onChange,s.id)});
   if(depth<MAXDEPTH-1)action("Browse SOPs to add inside",function(){openTemplatePicker(a,s.id,depth+1,function(nodes,parent,ruleId){saveSubtaskWithSops(a,s.id,{},[ruleId],true).then(function(saved){a.subtasks=saved.subtasks;S.expanded["n"+s.id]=true;S.workCollapsed["group:"+s.id]=false;rememberWorkFolds();onChange()}).catch(function(e){toast(e.userMessage||msgFor(e))})})});return menu;
 }
@@ -1640,14 +1670,13 @@ function subNodes(host,a,nodes,depth,compact){
     subTitle.onclick=function(){openSubtask(a,s)};r.appendChild(subTitle);
     if(writable())r.appendChild(subtaskEditButton(a,s));
     if(writable()){
-      var actions=subReuseActions(a,s,depth,function(){persistSubs(a);render()});
+      var actions=subReuseActions(a,s,depth,function(){render()});
       if(compact){
-        function command(label,fn){var b=el('button',null,label);b.onclick=function(){actions.open=false;fn()};actions.appendChild(b)}
+        function command(label,fn){actions.addAction(label,fn)}
         if(depth<MAXDEPTH-1){
           command('Add a subtask',function(){S.expanded['n'+s.id]=true;S.workCollapsed['group:'+s.id]=false;rememberWorkFolds();S.focusAdd='n'+s.id;renderMain()});
           command('Add placements',function(){S.placeFor=s.id;S.expanded['n'+s.id]=true;S.workCollapsed['group:'+s.id]=false;rememberWorkFolds();renderMain()});
         }
-        command('Remove',function(){confirmRemoval(r,group?'Remove this group and everything inside it?':'Remove this checklist item?',function(){saveSubs(a,removeNode(a.subtasks,s.id))})});
       }
       r.appendChild(actions);
     }
@@ -2326,7 +2355,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
         };
         r.appendChild(ti);
         r.appendChild(subtaskEditButton(a,s,function(current){a.subtasks=current.subtasks;drawSubs(null)}));
-        if(writable())r.appendChild(subReuseActions(a,s,depth,function(){persistSubs(a);render();drawSubs(null)}));
+        if(writable())r.appendChild(subReuseActions(a,s,depth,function(){render();drawSubs(null)}));
         if(s.description)r.appendChild(el("p","sub-description",s.description));
         if(depth<MAXDEPTH-1){
           var pc=el("button","sub-x place","⊞");

@@ -300,18 +300,14 @@ textarea{resize:vertical;min-height:76px;font-weight:300;line-height:1.6}
 .card .row-main .due-time{order:2;font-size:10px}
 .card .row-ty{order:3;flex-basis:100%;max-width:100%;white-space:normal;line-height:1.6}
 .card .row-main .sub-count{order:4}.card .row-main .has-script{order:5}
-.card .campaign-activity-copy{width:26px;min-height:28px;padding:2px;border:0;font-size:17px}
 .card .subs{margin-left:9px;padding-left:8px}
-.card .compact-sub{position:relative;display:grid;grid-template-columns:26px minmax(0,1fr) 28px 28px;align-items:start;gap:3px 6px;padding:8px 2px}
+.card .compact-sub{position:relative;display:grid;grid-template-columns:26px minmax(0,1fr) 28px 66px;align-items:start;gap:3px 6px;padding:8px 2px}
 .card .compact-sub>.sub-tgl{position:absolute;left:-20px;top:9px;min-width:20px;width:20px;min-height:20px;height:20px}
 .card .compact-sub>.work-complete{grid-column:1;grid-row:1;margin-top:2px}
 .card .compact-sub>.sub-title-button{grid-column:2/-1;grid-row:1;overflow-wrap:anywhere}
 .card .compact-sub>.sub-edit{grid-column:3;grid-row:2;width:28px;height:28px;border:0;background:transparent}
 .card .compact-sub>.reuse-menu{grid-column:4;grid-row:2;min-width:0;border:0;background:transparent}
-.card .compact-sub>.reuse-menu summary{padding:3px 5px;min-height:28px;text-align:center}
-.card .compact-sub>.reuse-menu[open]{grid-column:2/-1;grid-row:3;border:1px solid var(--line);padding:4px;display:flex;flex-direction:column}
-.card .compact-sub>.reuse-menu[open] summary{text-align:right}
-.card .compact-sub>.sub-meta{grid-column:2;grid-row:2;gap:4px 8px}
+.card .compact-sub>.sub-meta{grid-column:2/-1;grid-row:3;gap:4px 8px}
 .card .compact-sub .sub-deadline{min-height:20px;min-width:0;padding:0;flex-direction:row;gap:6px;font-size:10px}
 .card .compact-sub>.sub-description{grid-column:2/-1;grid-row:auto;margin:0;font-size:11px}
 .card .compact-sub>.inline-confirm{grid-column:1/-1}
@@ -600,12 +596,17 @@ button:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid var
 .status-label{font-size:10px;color:var(--text-2)}
 .reuse-tools{display:flex;align-items:center;gap:8px 16px;flex-wrap:wrap}
 .reuse-tools .btn{font-size:12px;padding:8px 12px}
-.reuse-menu{position:relative;flex:none;font-size:12px;border:1px solid var(--line);border-radius:7px;background:var(--surface)}
-.reuse-menu summary{padding:3px 9px;cursor:pointer;list-style:none;font-weight:600}
-.reuse-menu summary::-webkit-details-marker{display:none}
-.reuse-menu[open]{flex-basis:100%;padding:4px;display:flex;flex-wrap:wrap}
-.reuse-menu button{padding:8px 10px;text-align:left;border-radius:5px;color:var(--brand)}
-.reuse-menu button:hover{background:var(--ice)}
+.item-actions,.reuse-menu.item-actions{flex:none;position:relative;border:0;background:transparent;border-radius:6px}
+.item-actions-trigger,.reuse-menu .item-actions-trigger{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:32px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;color:var(--text-2);background:var(--surface);font-size:11px;line-height:1.4;white-space:nowrap}
+.item-actions-trigger>span{font-size:9px}
+.item-actions-trigger:hover,.item-actions-trigger[aria-expanded=true]{background:var(--ice);color:var(--text)}
+.item-actions-menu{max-height:calc(100dvh - 24px);overflow-y:auto;z-index:50}
+.item-actions-menu .is-danger{color:var(--danger)}
+.item-actions-menu .is-danger:hover{background:var(--danger-soft)}
+.work-group-heading-row{flex-wrap:wrap}
+.cell .work-group-heading-row>.item-actions{flex-basis:100%;display:flex;justify-content:flex-end}
+.cell .item-actions-trigger{min-height:28px;font-size:10px;padding:4px 6px}
+@media(max-width:720px){.work-group-heading-row>.item-actions{flex-basis:100%;display:flex;justify-content:flex-end}}
 .template-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;border:1px solid var(--line);border-radius:9px;padding:12px;font-size:12px}
 .template-row>div:first-child,.template-row>span:first-child{flex:1 1 160px;min-width:0;overflow-wrap:anywhere}
 .template-row .btn{font-size:11px;padding:8px 12px}

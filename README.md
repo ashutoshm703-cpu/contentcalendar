@@ -43,8 +43,16 @@ bundles the private file-upload client; server functions handle AI and file acce
   collapsing a long card brings its heading back into view when needed. Task and
   group chevrons keep the nested hierarchy clear. Compact checklist rows keep the
   checkbox beside the name, with dates and metadata underneath. The pencil opens
-  details; **⋯** includes duplication, AI, SOPs, adding subtasks/placements and
-  removal with confirmation. No action menus reorder work or change data.
+  details. A visible **Actions ▾** button beside each task and subtask provides
+  **Duplicate** and **Delete** directly in Today, Weekly, Month and Campaigns.
+  Task deletion stays restricted to Ashutosh's verified owner account. Subtask
+  menus also include AI, SOPs and, in campaign checklists, adding nested subtasks
+  or placements. Delete asks for confirmation and explains when a group's full
+  checklist will be removed. Failed deletions retain the confirmation for retry;
+  these subtask Duplicate/Delete actions read the latest activity in a transaction
+  so other checklist changes are preserved. Menus open above the page without shifting
+  the list, support keyboard navigation, and return focus on Escape. Folding
+  doesn't reorder or change work.
 - **Planner** is a reusable weekly content blueprint, independent of campaigns,
   activity dates, owners and completion. Switch between **Instagram → Shorts/Reels,
   Carousel, Stories** and **YouTube → Shorts, Long Form, Live, Exam**. Each platform
