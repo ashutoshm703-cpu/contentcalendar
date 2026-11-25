@@ -258,10 +258,10 @@ textarea{resize:vertical;min-height:76px;font-weight:300;line-height:1.6}
 
 /* ── campaigns ─────────────────────────────────────────── */
 .camps{padding-bottom:48px;display:grid;align-items:start;gap:16px;grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:24px;box-shadow:var(--sh-1);transition:border-color .2s var(--e);animation:rise .3s var(--e) backwards;min-width:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:24px;box-shadow:var(--sh-1);transition:border-color .2s var(--e);min-width:0}
 .card:hover{border-color:var(--line-2)}
-/* an expanded campaign takes the full width — a tree needs room to be read */
-.card.open{grid-column:1/-1}
+/* Campaigns stay in their original grid position when expanded. */
+.card.open{grid-column:auto}
 .card.open:hover{transform:none}
 .top{display:flex;align-items:flex-start;gap:10px}
 .c-top{display:flex;align-items:flex-start;gap:11px;flex:1;min-width:0;text-align:left}
@@ -285,8 +285,36 @@ textarea{resize:vertical;min-height:76px;font-weight:300;line-height:1.6}
 .chev2{font-size:9px;font-style:normal}
 .c-acts{margin-top:14px;display:flex;flex-direction:column;gap:3px}
 .camps>.card .top{flex-wrap:nowrap;gap:12px}
-.camps>.card .c-top{flex:1;min-width:0;padding:0}
-.card .c-title{padding-left:12px;border-left:3px solid var(--c)}
+.camps>.card .c-top{flex:1;min-width:0;padding:0;align-items:center;gap:10px}
+.card .c-title{padding-left:0;border-left:0}
+.campaign-chevron{display:grid;place-items:center;width:28px;height:28px;flex:none;border-radius:50%;background:var(--surface-2);color:var(--c)}
+.c-top[aria-expanded=true] .campaign-chevron{background:var(--sky-soft)}
+.c-top[aria-expanded=true] .campaign-chevron svg{transform:rotate(90deg)}
+.c-top:hover .campaign-chevron{background:var(--ice)}
+.card .c-acts{border-top:1px solid var(--line);padding-top:12px;margin-top:12px;gap:8px}
+.card .row{align-items:flex-start;gap:7px;padding:8px 0}
+.card .row>.sub-tgl,.card .row>.work-complete{margin-top:2px}
+.card .row-main{flex-wrap:wrap;gap:4px 8px}
+.card .row .n{order:0;flex:1 1 100%;white-space:normal;overflow:visible;overflow-wrap:anywhere;font-weight:500;line-height:1.6}
+.card .row .d{order:1;width:auto;font-weight:400}
+.card .row-main .due-time{order:2;font-size:10px}
+.card .row-ty{order:3;flex-basis:100%;max-width:100%;white-space:normal;line-height:1.6}
+.card .row-main .sub-count{order:4}.card .row-main .has-script{order:5}
+.card .campaign-activity-copy{width:26px;min-height:28px;padding:2px;border:0;font-size:17px}
+.card .subs{margin-left:9px;padding-left:8px}
+.card .compact-sub{position:relative;display:grid;grid-template-columns:26px minmax(0,1fr) 28px 28px;align-items:start;gap:3px 6px;padding:8px 2px}
+.card .compact-sub>.sub-tgl{position:absolute;left:-20px;top:9px;min-width:20px;width:20px;min-height:20px;height:20px}
+.card .compact-sub>.work-complete{grid-column:1;grid-row:1;margin-top:2px}
+.card .compact-sub>.sub-title-button{grid-column:2/-1;grid-row:1;overflow-wrap:anywhere}
+.card .compact-sub>.sub-edit{grid-column:3;grid-row:2;width:28px;height:28px;border:0;background:transparent}
+.card .compact-sub>.reuse-menu{grid-column:4;grid-row:2;min-width:0;border:0;background:transparent}
+.card .compact-sub>.reuse-menu summary{padding:3px 5px;min-height:28px;text-align:center}
+.card .compact-sub>.reuse-menu[open]{grid-column:2/-1;grid-row:3;border:1px solid var(--line);padding:4px;display:flex;flex-direction:column}
+.card .compact-sub>.reuse-menu[open] summary{text-align:right}
+.card .compact-sub>.sub-meta{grid-column:2;grid-row:2;gap:4px 8px}
+.card .compact-sub .sub-deadline{min-height:20px;min-width:0;padding:0;flex-direction:row;gap:6px;font-size:10px}
+.card .compact-sub>.sub-description{grid-column:2/-1;grid-row:auto;margin:0;font-size:11px}
+.card .compact-sub>.inline-confirm{grid-column:1/-1}
 .card h3{font-size:18px;line-height:1.45;letter-spacing:-.02em;font-weight:600}
 .campaign-state{display:block;font-size:11px;font-weight:500;line-height:1.5;color:var(--text-3);margin-bottom:5px}
 .campaign-state.is-live{color:var(--text-2)}

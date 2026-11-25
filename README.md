@@ -36,8 +36,15 @@ bundles the private file-upload client; server functions handle AI and file acce
   for its uploader or Ashutosh and only when no campaign references the file.
 - Campaign cards prioritize the name and publishing progress, with quiet status,
   date and owner details. **⋯** groups Edit, Duplicate and resource management in
-  a keyboard-accessible menu. Click the title or compact **Show activities** control
-  to expand the original task hierarchy. No action menus reorder work or change data.
+  a keyboard-accessible menu. A visible circular chevron beside each name shows
+  whether its activities are expanded. Click it, the title or **Show activities**
+  to open the original task hierarchy inside the same card, without moving it to
+  another grid position. Folding retains keyboard focus and the page position;
+  collapsing a long card brings its heading back into view when needed. Task and
+  group chevrons keep the nested hierarchy clear. Compact checklist rows keep the
+  checkbox beside the name, with dates and metadata underneath. The pencil opens
+  details; **⋯** includes duplication, AI, SOPs, adding subtasks/placements and
+  removal with confirmation. No action menus reorder work or change data.
 - **Planner** is a reusable weekly content blueprint, independent of campaigns,
   activity dates, owners and completion. Switch between **Instagram → Shorts/Reels,
   Carousel, Stories** and **YouTube → Shorts, Long Form, Live, Exam**. Each platform
