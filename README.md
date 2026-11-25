@@ -14,8 +14,10 @@ bundles the private file-upload client; server functions handle AI and file acce
 
 ## Workspace experience
 
-- **Campaigns → Resources**, below each campaign's owner/date details, opens its
-  shared links and files even when activities are collapsed. **Edit → Manage
+- Each campaign card shows attached file/link names below its owner/date details,
+  even when activities are collapsed. Click a link to open it or a file name to
+  download it. **+ Add resource** opens shared resources for adding/removing items.
+  **Edit → Manage
   campaign resources** provides the same access while preserving unsaved campaign
   details. **Add link** accepts Google Docs, Sheets, Slides, Drive and other web
   URLs with an optional name; Drive permissions remain unchanged. **Upload files**

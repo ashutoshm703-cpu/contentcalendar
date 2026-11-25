@@ -703,6 +703,13 @@ function renderCalendar(main){
 /* Campaign resources use the existing campaign document for shared metadata.
    File bytes live in private storage and are downloaded through authenticated API. */
 function resourcesFor(c){return RESOURCE?RESOURCE.list(c):[]}
+function campaignResourceLinks(c){
+  var bar=el('div','campaign-resource-links');bar.setAttribute('aria-label','Attached resources for '+c.name);
+  resourcesFor(c).forEach(function(resource){var item=el(resource.kind==='link'?'a':'button','campaign-resource-item'),icon=el('span','campaign-resource-kind',resource.kind==='file'?'FILE':resource.label==='Google Sheets'?'SHEET':resource.label==='Google Docs'?'DOC':'LINK');icon.setAttribute('aria-hidden','true');item.appendChild(icon);item.appendChild(el('span','campaign-resource-title',resource.name));item.title=resource.name;item.setAttribute('data-resource-id',resource.id);
+    if(resource.kind==='link'){item.href=resource.url;item.target='_blank';item.rel='noopener noreferrer'}else{item.setAttribute('aria-label','Download '+resource.name);item.setAttribute('data-focus-key','campaign-file:'+c.id+':'+resource.id);item.disabled=!!S.resourceDownloads[c.id+':'+resource.id];item.onclick=function(){item.disabled=true;var work=downloadCampaignFile(c,resource);if(work)work.finally(function(){if(item.isConnected)item.disabled=false})}}bar.appendChild(item);
+  });
+  var manage=el('button','campaign-resources-button',writable()?'+ Add resource':'View resources');manage.setAttribute('aria-label','Resources for '+c.name);manage.onclick=function(){openCampaignResources(c)};bar.appendChild(manage);return bar;
+}
 function syncResourceCampaign(saved){S.campaigns=S.campaigns.map(function(c){return c.id===saved.id?saved:c});render();return saved}
 function saveCampaignResource(campaignId,resource){
   if(!RESOURCE.validRecord(resource))return Promise.reject(RESOURCE.error("Check the resource details and try again."));
@@ -735,7 +742,7 @@ function openCampaignLink(c){
   function validate(){save.disabled=!url.value.trim();ui.error.hidden=true}url.oninput=validate;name.oninput=validate;save.onclick=function(){var data;try{data=RESOURCE.link(url.value,name.value)}catch(e){ui.error.textContent=e.userMessage;ui.error.hidden=false;url.focus();return}runDialogSave(ui,save,function(){return saveCampaignResource(c.id,Object.assign(data,{id:id,addedBy:S.me.id,createdAt:createdAt}))},function(){refreshResourceView();toast('Campaign link added')})};ui.foot.appendChild(save);validate();keyboardSave(ui.node,save);overlay(ui.node,function(){return !!url.value||!!name.value},true);
 }
 function downloadCampaignFile(c,resource){
-  var key=c.id+':'+resource.id;if(S.resourceDownloads[key])return;S.resourceDownloads[key]=true;refreshResourceView();campaignFileRequest('GET','campaignId='+encodeURIComponent(c.id)+'&resourceId='+encodeURIComponent(resource.id),null,true).then(function(blob){var url=URL.createObjectURL(blob),a=el('a');a.href=url;a.download=resource.name;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(url)},30000)}).catch(function(e){toast(e.userMessage||msgFor(e))}).finally(function(){delete S.resourceDownloads[key];refreshResourceView()});
+  var key=c.id+':'+resource.id;if(S.resourceDownloads[key])return;S.resourceDownloads[key]=true;refreshResourceView();return campaignFileRequest('GET','campaignId='+encodeURIComponent(c.id)+'&resourceId='+encodeURIComponent(resource.id),null,true).then(function(blob){var url=URL.createObjectURL(blob),a=el('a');a.href=url;a.download=resource.name;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(url)},30000)}).catch(function(e){toast(e.userMessage||msgFor(e))}).finally(function(){delete S.resourceDownloads[key];refreshResourceView()});
 }
 function openCampaignResources(c){
   c=campById(c.id)||c;var ui=actionDialog('Campaign resources',c.name+' · Keep briefs, trackers and files with this campaign.'),toolbar=el('div','resource-toolbar'),list=el('div','resource-list'),jobs=el('div','resource-jobs'),status=el('p','hint'),picker=input('file'),configured=false;
@@ -795,7 +802,7 @@ function renderCampaigns(main){
     if(late)meta.appendChild(el("span","tag bad",late+" overdue"));
     if(c.owner)meta.appendChild(uname(c.owner));
     card.appendChild(meta);
-    var resourcesButton=el("button","campaign-resources-button","Resources"+(resourcesFor(c).length?" · "+resourcesFor(c).length:""));resourcesButton.setAttribute("aria-label","Resources for "+c.name);resourcesButton.onclick=function(){openCampaignResources(c)};card.appendChild(resourcesButton);
+    card.appendChild(campaignResourceLinks(c));
     var pr=el("div","prog"),bar=el("i");bar.style.width=(acts.length?Math.round(pub/acts.length*100):0)+"%";pr.appendChild(bar);
     card.appendChild(pr);
     var pl=el("div","prog-l");
