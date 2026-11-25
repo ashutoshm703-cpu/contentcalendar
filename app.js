@@ -703,12 +703,25 @@ function renderCalendar(main){
 /* Campaign resources use the existing campaign document for shared metadata.
    File bytes live in private storage and are downloaded through authenticated API. */
 function resourcesFor(c){return RESOURCE?RESOURCE.list(c):[]}
+function campaignResourceIcon(kind){
+  var svg=document.createElementNS('http://www.w3.org/2000/svg','svg'),path=document.createElementNS('http://www.w3.org/2000/svg','path');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('width','16');svg.setAttribute('height','16');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','1.7');svg.setAttribute('stroke-linecap','round');svg.setAttribute('stroke-linejoin','round');svg.setAttribute('aria-hidden','true');
+  path.setAttribute('d',kind==='link'?'M10 13a5 5 0 0 0 7 .2l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7-.2l-3 3a5 5 0 0 0 7 7l1.7-1.7':'m21 11-8.3 8.3a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.8-2.8l8.3-8.3');svg.appendChild(path);return svg;
+}
+function campaignCardActions(c){
+  var wrap=el('div','campaign-actions'),trigger=el('button','campaign-actions-trigger','⋯'),menu=el('div','campaign-actions-menu');trigger.type='button';trigger.title='Campaign actions';trigger.setAttribute('aria-label','Actions for campaign: '+c.name);trigger.setAttribute('aria-haspopup','menu');trigger.setAttribute('aria-expanded','false');menu.setAttribute('popover','auto');menu.setAttribute('role','menu');menu.setAttribute('aria-label','Campaign actions: '+c.name);
+  function command(text,label,fn,icon){var button=el('button','campaign-menu-command');button.type='button';button.setAttribute('role','menuitem');button.setAttribute('aria-label',label);if(icon)button.appendChild(campaignResourceIcon(icon));button.appendChild(el('span',null,text));button.onclick=function(){menu.hidePopover();fn()};menu.appendChild(button)}
+  if(writable()){command('Edit campaign','Edit '+c.name,function(){openCampaign(c)});command('Duplicate campaign','Duplicate '+c.name,function(){openDuplicate(c,true,false)})}
+  command(writable()?'Add or manage resources':'View resources','Resources for '+c.name,function(){openCampaignResources(c)},'file');
+  menu.ontoggle=function(){trigger.setAttribute('aria-expanded',String(menu.matches(':popover-open')))};
+  menu.onkeydown=function(e){var items=Array.from(menu.querySelectorAll('button')),index=items.indexOf(document.activeElement);if(['ArrowDown','ArrowUp','Home','End'].indexOf(e.key)>=0){e.preventDefault();items[e.key==='Home'?0:e.key==='End'?items.length-1:(index+(e.key==='ArrowDown'?1:-1)+items.length)%items.length].focus()}else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();menu.hidePopover();trigger.focus()}};
+  trigger.onclick=function(){if(menu.matches(':popover-open')){menu.hidePopover();return}menu.showPopover();var anchor=trigger.getBoundingClientRect(),bounds=menu.getBoundingClientRect();menu.style.left=Math.max(12,Math.min(anchor.right-bounds.width,window.innerWidth-bounds.width-12))+'px';menu.style.top=Math.max(12,Math.min(anchor.bottom+6,window.innerHeight-bounds.height-12))+'px';menu.querySelector('button').focus()};wrap.appendChild(trigger);wrap.appendChild(menu);return wrap;
+}
 function campaignResourceLinks(c){
-  var bar=el('div','campaign-resource-links');bar.setAttribute('aria-label','Attached resources for '+c.name);
-  resourcesFor(c).forEach(function(resource){var item=el(resource.kind==='link'?'a':'button','campaign-resource-item'),icon=el('span','campaign-resource-kind',resource.kind==='file'?'FILE':resource.label==='Google Sheets'?'SHEET':resource.label==='Google Docs'?'DOC':'LINK');icon.setAttribute('aria-hidden','true');item.appendChild(icon);item.appendChild(el('span','campaign-resource-title',resource.name));item.title=resource.name;item.setAttribute('data-resource-id',resource.id);
+  var bar=el('div','campaign-resource-links'),items=resourcesFor(c),expanded=!!S.expanded['resource-'+c.id];bar.setAttribute('aria-label','Attached resources for '+c.name);
+  items.slice(0,expanded?items.length:2).forEach(function(resource){var item=el(resource.kind==='link'?'a':'button','campaign-resource-item');item.appendChild(campaignResourceIcon(resource.kind));item.appendChild(el('span','campaign-resource-title',resource.name));item.title=resource.name;item.setAttribute('data-resource-id',resource.id);
     if(resource.kind==='link'){item.href=resource.url;item.target='_blank';item.rel='noopener noreferrer'}else{item.setAttribute('aria-label','Download '+resource.name);item.setAttribute('data-focus-key','campaign-file:'+c.id+':'+resource.id);item.disabled=!!S.resourceDownloads[c.id+':'+resource.id];item.onclick=function(){item.disabled=true;var work=downloadCampaignFile(c,resource);if(work)work.finally(function(){if(item.isConnected)item.disabled=false})}}bar.appendChild(item);
   });
-  var manage=el('button','campaign-resources-button',writable()?'+ Add resource':'View resources');manage.setAttribute('aria-label','Resources for '+c.name);manage.onclick=function(){openCampaignResources(c)};bar.appendChild(manage);return bar;
+  if(items.length>2){var more=el('button','campaign-resource-more',expanded?'Show less':'+'+(items.length-2)+' more');more.setAttribute('aria-label',(expanded?'Show fewer':'Show all')+' attachments for '+c.name);more.setAttribute('aria-expanded',String(expanded));more.setAttribute('data-focus-key','resource-more:'+c.id);more.onclick=function(){S.expanded['resource-'+c.id]=!expanded;render()};bar.appendChild(more)}return bar;
 }
 function syncResourceCampaign(saved){S.campaigns=S.campaigns.map(function(c){return c.id===saved.id?saved:c});render();return saved}
 function saveCampaignResource(campaignId,resource){
@@ -779,44 +792,18 @@ function renderCampaigns(main){
     var tgl=el("button","c-top");
     tgl.setAttribute("aria-expanded",open?"true":"false");
     tgl.title=open?"Collapse campaign":"Expand to see and add activities";
-    tgl.appendChild(el("i","chev",open?"▾":"▸"));
-    tgl.appendChild(el("i","swatch"));
-    var h=el("div","c-title");h.appendChild(el("h3",null,c.name));
+    var h=el("div","c-title");h.appendChild(el("span","campaign-state"+(c.status==="Live"?" is-live":""),c.status));h.appendChild(el("h3",null,c.name));
     tgl.appendChild(h);
     tgl.onclick=function(){S.expanded["c"+c.id]=!open;S.workCollapsed["campaign:"+c.id]=open;rememberWorkFolds();render()};
     top.appendChild(tgl);
-    var ed=el("button","edit-campaign","Edit");ed.setAttribute("aria-label","Edit "+c.name);
-    ed.onclick=function(){openCampaign(c)};
-    if(writable())top.appendChild(ed);
-    if(writable()){
-      var duplicate=el("button","edit-campaign","Duplicate");duplicate.setAttribute("aria-label","Duplicate "+c.name);
-      duplicate.onclick=function(){openDuplicate(c,true,false)};top.appendChild(duplicate);
-    }
-    card.appendChild(top);
-    if(c.goal)card.appendChild(el("p","goal",c.goal));
-    var meta=el("div","meta");
-    var tg=el("span","tag"+(c.status==="Live"?" live":""),c.status);meta.appendChild(tg);
-    meta.appendChild(el("span",null,fmtShort(c.startDate)+" → "+fmtLong(c.endDate)));
-    var left=daysBetween(TODAY,c.endDate);
-    if(c.status!=="Done")meta.appendChild(el("span",null,left<0?Math.abs(left)+"d over":left===0?"ends today":left+"d left"));
-    if(late)meta.appendChild(el("span","tag bad",late+" overdue"));
-    if(c.owner)meta.appendChild(uname(c.owner));
-    card.appendChild(meta);
-    card.appendChild(campaignResourceLinks(c));
-    var pr=el("div","prog"),bar=el("i");bar.style.width=(acts.length?Math.round(pub/acts.length*100):0)+"%";pr.appendChild(bar);
-    card.appendChild(pr);
-    var pl=el("div","prog-l");
-    pl.appendChild(el("span",null,pub+" of "+acts.length+" published"));
-    pl.appendChild(el("span",null,acts.length?Math.round(pub/acts.length*100)+"%":"no activities yet"));
-    card.appendChild(pl);
-    if(acts.length){
-      var tb=el("button","c-toggle");tb.setAttribute("aria-expanded",String(open));
-      tb.appendChild(el("span",null,open?"Hide activities"
-        :"Show "+acts.length+(acts.length===1?" activity":" activities")));
-      tb.appendChild(el("i","chev2",open?"▴":"▾"));
-      tb.onclick=function(){S.expanded["c"+c.id]=!open;S.workCollapsed["campaign:"+c.id]=open;rememberWorkFolds();render()};
-      card.appendChild(tb);
-    }
+    top.appendChild(campaignCardActions(c));card.appendChild(top);
+    var dates=el('div','campaign-dates');dates.appendChild(el('span',null,fmtShort(c.startDate)+' → '+fmtLong(c.endDate)));var left=daysBetween(TODAY,c.endDate);if(c.status!=='Done')dates.appendChild(el('span','campaign-time-left',left<0?Math.abs(left)+'d past end':left===0?'Ends today':left+'d left'));card.appendChild(dates);
+    if(c.goal){var goal=el('p','goal',c.goal);goal.title=c.goal;card.appendChild(goal)}
+    if(resourcesFor(c).length)card.appendChild(campaignResourceLinks(c));
+    var meta=el('div','meta campaign-meta');if(c.owner)meta.appendChild(uname(c.owner));else meta.appendChild(el('span','campaign-unassigned','No owner'));if(late)meta.appendChild(el('span','campaign-overdue',late+' overdue'));card.appendChild(meta);
+    if(acts.length){var progress=el('div','prog'),bar=el('i');bar.style.width=Math.round(pub/acts.length*100)+'%';progress.setAttribute('role','progressbar');progress.setAttribute('aria-label','Publishing progress for '+c.name);progress.setAttribute('aria-valuemin','0');progress.setAttribute('aria-valuemax',String(acts.length));progress.setAttribute('aria-valuenow',String(pub));progress.appendChild(bar);card.appendChild(progress)}
+    var footer=el('div','campaign-footer'),published=el('span','prog-l',acts.length?pub+' of '+acts.length+' published':'No activities yet');footer.appendChild(published);
+    if(acts.length){var tb=el('button','c-toggle');tb.setAttribute('aria-expanded',String(open));tb.appendChild(el('span',null,open?'Hide activities':'Show '+acts.length+(acts.length===1?' activity':' activities')));var chevron=el('i','chev2',open?'▴':'▾');chevron.setAttribute('aria-hidden','true');tb.appendChild(chevron);tb.onclick=function(){S.expanded['c'+c.id]=!open;S.workCollapsed['campaign:'+c.id]=open;rememberWorkFolds();render()};footer.appendChild(tb)}card.appendChild(footer);
     if(open&&acts.length){
       var list=el("div","c-acts");
       acts.slice().sort(function(x,y){return x.dueDate<y.dueDate?-1:(x.dueDate>y.dueDate?1:0)})

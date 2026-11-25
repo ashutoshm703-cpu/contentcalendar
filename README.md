@@ -16,7 +16,11 @@ bundles the private file-upload client; server functions handle AI and file acce
 
 - Each campaign card shows attached file/link names below its owner/date details,
   even when activities are collapsed. Click a link to open it or a file name to
-  download it. **+ Add resource** opens shared resources for adding/removing items.
+  download it. A link/paperclip icon identifies each attachment; the first two names
+  appear as quiet text links. **+ N more** expands additional names. Long names
+  truncate visually with the full name available in a tooltip. **⋯ → Add or manage
+  resources** in the campaign header opens shared resources, including
+  when a campaign has no attachments.
   **Edit → Manage
   campaign resources** provides the same access while preserving unsaved campaign
   details. **Add link** accepts Google Docs, Sheets, Slides, Drive and other web
@@ -30,6 +34,10 @@ bundles the private file-upload client; server functions handle AI and file acce
   confirmation. Duplicated campaigns share resource references; unlinking a file
   preserves copies still referenced by other campaigns. Physical cleanup runs only
   for its uploader or Ashutosh and only when no campaign references the file.
+- Campaign cards prioritize the name and publishing progress, with quiet status,
+  date and owner details. **⋯** groups Edit, Duplicate and resource management in
+  a keyboard-accessible menu. Click the title or compact **Show activities** control
+  to expand the original task hierarchy. No action menus reorder work or change data.
 - **Planner** is a reusable weekly content blueprint, independent of campaigns,
   activity dates, owners and completion. Switch between **Instagram → Shorts/Reels,
   Carousel, Stories** and **YouTube → Shorts, Long Form, Live, Exam**. Each platform
