@@ -1,9 +1,11 @@
 .DS_Store
 Thumbs.db
 node_modules/
+/upload-client.js
 .vercel
 .env
 .env.local
 .playwright-cli/
 output/playwright/
 _shell.html
+.env*

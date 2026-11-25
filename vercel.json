@@ -1,5 +1,6 @@
 {
   "functions": {
-    "api/activity-plan.js": { "maxDuration": 60 }
+    "api/activity-plan.js": { "maxDuration": 60 },
+    "api/campaign-files.js": { "maxDuration": 60 }
   }
 }

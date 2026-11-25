@@ -137,8 +137,8 @@ var S={campaigns:[],activities:[],view:"calendar",calView:"next7",workScope:"my"
   loading:true,stale:false,err:null,canWrite:null,open:null,expanded:{},focusAdd:null,lastAdd:{},
   placeFor:null,showFilters:false,me:null,team:[],members:[],userRoster:[],ownerAliases:{},membersReady:false,teamError:"",workCollapsed:{},
   profiles:{},dayMax:3,query:"",focusDay:"",templates:[],templateError:"",templatesLoading:true,
-  sopRules:[],sopReady:false,contentOptionsReady:false,contentOptionsError:"",plannerPlatform:"Instagram",weeklyPlan:null,weeklyPlanReady:false,weeklyPlanError:"",cadenceExpanded:{}};
-var db=null,U=null,phone=false;
+  sopRules:[],sopReady:false,contentOptionsReady:false,contentOptionsError:"",plannerPlatform:"Instagram",weeklyPlan:null,weeklyPlanReady:false,weeklyPlanError:"",cadenceExpanded:{},resourceJobs:[],resourceDownloads:{}};
+var db=null,U=null,phone=false,RESOURCE=window.CampaignResourceUtils,resourceView=null,uploadClientPromise=null;
 var $=function(id){return document.getElementById(id)};
 
 /* ─── date helpers (string dates, no timezone math) ─────── */
@@ -700,6 +700,60 @@ function renderCalendar(main){
   main.appendChild(box);
 }
 
+/* Campaign resources use the existing campaign document for shared metadata.
+   File bytes live in private storage and are downloaded through authenticated API. */
+function resourcesFor(c){return RESOURCE?RESOURCE.list(c):[]}
+function syncResourceCampaign(saved){S.campaigns=S.campaigns.map(function(c){return c.id===saved.id?saved:c});render();return saved}
+function saveCampaignResource(campaignId,resource){
+  if(!RESOURCE.validRecord(resource))return Promise.reject(RESOURCE.error("Check the resource details and try again."));
+  return db.runTransaction(function(tx){var ref=db.doc("campaigns/"+campaignId);return tx.get(ref).then(function(snap){if(!snap.exists)throw RESOURCE.error("This campaign no longer exists.");var current=Object.assign({id:campaignId},snap.data()),items=resourcesFor(current),same=items.find(function(item){return item.id===resource.id});if(same){if(JSON.stringify(same)!==JSON.stringify(resource))throw RESOURCE.error("This resource was changed. Reopen the campaign before trying again.");return current}if(items.length>=RESOURCE.MAX_RESOURCES)throw RESOURCE.error("This campaign already has 100 resources. Remove one before adding another.");if(resource.kind==="link"&&items.some(function(item){return item.kind==="link"&&item.url===resource.url}))throw RESOURCE.error("This link is already attached to the campaign.");var next=items.concat([resource]),patch={resources:next,resourcePaths:RESOURCE.paths(next)};tx.update(ref,patch);return Object.assign({},current,patch)})}).then(syncResourceCampaign);
+}
+function detachCampaignResource(campaignId,id){
+  return db.runTransaction(function(tx){var ref=db.doc("campaigns/"+campaignId);return tx.get(ref).then(function(snap){if(!snap.exists)throw RESOURCE.error("This campaign no longer exists.");var current=Object.assign({id:campaignId},snap.data()),next=resourcesFor(current).filter(function(item){return item.id!==id}),patch={resources:next,resourcePaths:RESOURCE.paths(next)};tx.update(ref,patch);return Object.assign({},current,patch)})}).then(syncResourceCampaign);
+}
+function campaignFileRequest(method,query,body,binary){
+  if(!auth||!auth.currentUser)return Promise.reject(RESOURCE.error("Sign in again to access campaign files."));
+  return auth.currentUser.getIdToken().then(function(token){return fetch('/api/campaign-files'+(query?'?'+query:''),{method:method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(60000)})}).then(function(response){if(!response.ok)return response.json().catch(function(){return {error:'Could not access campaign files. Please try again.'}}).then(function(data){throw RESOURCE.error(data.error||'Could not access campaign files. Please try again.')});return binary?response.blob():response.json()});
+}
+function cleanupCampaignFile(resource){if(!resource||resource.kind!=="file")return Promise.resolve();return campaignFileRequest('DELETE','',{resourceId:resource.id,addedBy:resource.addedBy,path:resource.path,name:resource.name}).catch(function(){})}
+function refreshResourceView(){if(resourceView&&resourceView.node.isConnected)resourceView.draw()}
+function loadUploadClient(){
+  if(window.CampaignFileUpload&&window.CampaignFileUpload.upload)return Promise.resolve(window.CampaignFileUpload);
+  if(!uploadClientPromise)uploadClientPromise=new Promise(function(resolve,reject){var script=el('script');script.src='/upload-client.js';script.onload=function(){if(window.CampaignFileUpload&&window.CampaignFileUpload.upload)resolve(window.CampaignFileUpload);else{uploadClientPromise=null;reject(RESOURCE.error('The upload tools could not load. Please try again.'))}};script.onerror=function(){script.remove();uploadClientPromise=null;reject(RESOURCE.error('The upload tools could not load. Please try again.'))};document.head.appendChild(script)});return uploadClientPromise;
+}
+function runCampaignUpload(job){
+  if(job.phase==='uploading'||job.phase==='attaching')return;job.phase=job.uploaded?'attaching':'uploading';job.error='';job.controller=new AbortController();refreshResourceView();
+  var upload=job.uploaded?Promise.resolve():Promise.all([loadUploadClient(),auth.currentUser.getIdToken()]).then(function(values){return values[0].upload(job.resource.path,job.file,{access:'private',handleUploadUrl:'/api/campaign-files',headers:{Authorization:'Bearer '+values[1]},clientPayload:JSON.stringify({campaignId:job.campaignId,resourceId:job.resource.id,name:job.resource.name,size:job.resource.size}),contentType:job.resource.contentType,multipart:job.resource.size>5*1024*1024,abortSignal:job.controller.signal,onUploadProgress:function(progress){job.progress=Math.round(progress.percentage||0);refreshResourceView()}})}).then(function(blob){if(!blob||blob.pathname!==job.resource.path)throw RESOURCE.error('The uploaded file could not be verified. Please retry.');job.uploaded=true});
+  upload.then(function(){if(job.phase==='canceled'){cleanupCampaignFile(job.resource);return}job.phase='attaching';refreshResourceView();return saveCampaignResource(job.campaignId,job.resource).then(function(){job.phase='done';job.file=null;S.resourceJobs=S.resourceJobs.filter(function(item){return item!==job});refreshResourceView();toast(job.resource.name+' attached')})}).catch(function(e){if(job.phase==='canceled'){cleanupCampaignFile(job.resource);return}job.phase='error';job.error=e.userMessage||(e.code?msgFor(e):'Upload failed. Retry, or add a Drive link instead.');refreshResourceView()});
+}
+function beginCampaignUploads(c,files){
+  if(!files.length)return;if(files.length>10)throw RESOURCE.error('Choose up to 10 files at a time.');files.forEach(function(file){RESOURCE.validateFile(file)});var pending=S.resourceJobs.filter(function(job){return job.campaignId===c.id&&job.phase!=='canceled'}).length;if(resourcesFor(c).length+pending+files.length>RESOURCE.MAX_RESOURCES)throw RESOURCE.error('A campaign can have up to 100 resources. Remove one before adding more.');
+  files.forEach(function(file){var id=sid(),name=RESOURCE.cleanName(file.name),job={campaignId:c.id,file:file,resource:{id:id,kind:'file',name:name,size:file.size,contentType:String(file.type||'application/octet-stream').slice(0,150),path:RESOURCE.filePath(S.me.id,id,name),addedBy:S.me.id,createdAt:new Date().toISOString()},phase:'queued',progress:0};S.resourceJobs.push(job);runCampaignUpload(job)});
+}
+function openCampaignLink(c){
+  var ui=actionDialog('Add campaign link','Attach a Google Doc, Sheet or another web resource to '+c.name+'.'),url=input('url','','Paste a link'),name=input('text','','e.g. Campaign brief'),save=el('button','btn btn-p','Add link'),id=sid(),createdAt=new Date().toISOString();url.maxLength=2048;name.maxLength=180;ui.body.insertBefore(field('Link *',url),ui.error);ui.body.insertBefore(field('Name (optional)',name),ui.error);ui.body.insertBefore(el('p','hint','Google Drive links use their existing sharing permissions. Give your teammates access in Drive if needed.'),ui.error);
+  function validate(){save.disabled=!url.value.trim();ui.error.hidden=true}url.oninput=validate;name.oninput=validate;save.onclick=function(){var data;try{data=RESOURCE.link(url.value,name.value)}catch(e){ui.error.textContent=e.userMessage;ui.error.hidden=false;url.focus();return}runDialogSave(ui,save,function(){return saveCampaignResource(c.id,Object.assign(data,{id:id,addedBy:S.me.id,createdAt:createdAt}))},function(){refreshResourceView();toast('Campaign link added')})};ui.foot.appendChild(save);validate();keyboardSave(ui.node,save);overlay(ui.node,function(){return !!url.value||!!name.value},true);
+}
+function downloadCampaignFile(c,resource){
+  var key=c.id+':'+resource.id;if(S.resourceDownloads[key])return;S.resourceDownloads[key]=true;refreshResourceView();campaignFileRequest('GET','campaignId='+encodeURIComponent(c.id)+'&resourceId='+encodeURIComponent(resource.id),null,true).then(function(blob){var url=URL.createObjectURL(blob),a=el('a');a.href=url;a.download=resource.name;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(url)},30000)}).catch(function(e){toast(e.userMessage||msgFor(e))}).finally(function(){delete S.resourceDownloads[key];refreshResourceView()});
+}
+function openCampaignResources(c){
+  c=campById(c.id)||c;var ui=actionDialog('Campaign resources',c.name+' · Keep briefs, trackers and files with this campaign.'),toolbar=el('div','resource-toolbar'),list=el('div','resource-list'),jobs=el('div','resource-jobs'),status=el('p','hint'),picker=input('file'),configured=false;
+  ui.node.classList.add('resources-editor');ui.cancel.textContent='Done';picker.multiple=true;picker.hidden=true;picker.setAttribute('aria-label','Upload campaign files');var upload=el('button','btn btn-o','Upload files');upload.disabled=true;
+  if(writable()){var add=el('button','btn btn-p','Add link');add.onclick=function(){openCampaignLink(campById(c.id)||c)};upload.onclick=function(){picker.click()};toolbar.appendChild(add);toolbar.appendChild(upload);toolbar.appendChild(picker);ui.body.insertBefore(toolbar,ui.error);ui.body.insertBefore(el('p','hint','Files up to 25 MB each. For larger files, add a Drive link.'),ui.error)}
+  ui.body.insertBefore(status,ui.error);ui.body.insertBefore(jobs,ui.error);ui.body.insertBefore(list,ui.error);
+  function draw(){
+    var scroll=ui.body.scrollTop,current=campById(c.id)||c;clear(list);clear(jobs);var resources=resourcesFor(current);if(!resources.length)list.appendChild(el('p','resource-empty','No resources yet. Add a brief, tracker or supporting file.'));
+    resources.forEach(function(resource){var row=el('div','resource-row'),icon=el('span','resource-icon',resource.kind==='file'?'FILE':resource.label==='Google Sheets'?'SHEET':resource.label==='Google Docs'?'DOC':'LINK'),details=el('div','resource-details'),meta=resource.kind==='file'?RESOURCE.formatBytes(resource.size):new URL(resource.url).hostname;row.setAttribute('data-resource-id',resource.id);icon.setAttribute('aria-hidden','true');row.appendChild(icon);
+      if(resource.kind==='link'){var link=el('a','resource-name',resource.name);link.href=resource.url;link.target='_blank';link.rel='noopener noreferrer';details.appendChild(link)}else{var download=el('button','resource-name',resource.name);download.setAttribute('aria-label','Download '+resource.name);download.disabled=!!S.resourceDownloads[c.id+':'+resource.id];download.onclick=function(){downloadCampaignFile(current,resource)};details.appendChild(download)}details.appendChild(el('p','resource-meta',meta));row.appendChild(details);
+      if(writable()){var remove=el('button','text-button resource-remove','Remove');remove.setAttribute('aria-label','Remove resource: '+resource.name);remove.onclick=function(){var confirm=actionDialog('Remove campaign resource?','Remove “'+resource.name+'” from '+current.name+'?'),yes=el('button','btn btn-d','Remove');yes.onclick=function(){runDialogSave(confirm,yes,function(){return detachCampaignResource(c.id,resource.id)},function(){cleanupCampaignFile(resource);refreshResourceView();toast('Resource removed from campaign')})};confirm.foot.appendChild(yes);overlay(confirm.node,null,true)};row.appendChild(remove)}list.appendChild(row);
+    });
+    S.resourceJobs.filter(function(job){return job.campaignId===c.id&&job.phase!=='canceled'}).forEach(function(job){var row=el('div','resource-upload'),name=el('strong',null,job.resource.name),message=el('p','resource-meta',job.phase==='error'?job.error:job.phase==='attaching'?'Saving to campaign…':'Uploading · '+job.progress+'%');row.appendChild(name);row.appendChild(message);if(job.phase==='uploading'){var progress=el('progress');progress.max=100;progress.value=job.progress;progress.setAttribute('aria-label','Upload progress for '+job.resource.name);row.appendChild(progress)}if(job.phase==='error'){var retry=el('button','btn btn-o','Retry');retry.setAttribute('aria-label','Retry upload: '+job.resource.name);retry.onclick=function(){runCampaignUpload(job)};row.appendChild(retry)}if(job.phase!=='attaching'){var cancel=el('button','text-button','Cancel upload');cancel.setAttribute('aria-label','Cancel upload: '+job.resource.name);cancel.onclick=function(){job.phase='canceled';job.controller.abort();cleanupCampaignFile(job.resource);S.resourceJobs=S.resourceJobs.filter(function(item){return item!==job});refreshResourceView()};row.appendChild(cancel)}jobs.appendChild(row)});ui.body.scrollTop=scroll;
+  }
+  picker.onchange=function(){var files=Array.from(picker.files||[]);picker.value='';try{beginCampaignUploads(campById(c.id)||c,files);ui.error.hidden=true}catch(e){ui.error.hidden=false;ui.error.textContent=e.userMessage||msgFor(e)}};
+  function check(){status.textContent='Checking file uploads…';campaignFileRequest('GET','action=status').then(function(data){configured=!!data.configured;upload.disabled=!configured;status.textContent=configured?'Uploaded files are available to signed-in team members.':'File uploads are not available yet. Links can still be added.'}).catch(function(e){status.textContent=e.userMessage||'File uploads could not be checked.';var retry=el('button','text-button','Retry');retry.onclick=check;status.appendChild(retry)})}resourceView={node:ui.node,draw:draw};draw();overlay(ui.node,null,true);check();
+}
+
 /* ─── render: campaigns ─────────────────────────────────── */
 function renderCampaigns(main){
   if(S.loading){var g=el("div","camps");for(var i=0;i<3;i++){var s=el("div","skel");s.style.height="178px";g.appendChild(s)}main.appendChild(g);return}
@@ -741,6 +795,7 @@ function renderCampaigns(main){
     if(late)meta.appendChild(el("span","tag bad",late+" overdue"));
     if(c.owner)meta.appendChild(uname(c.owner));
     card.appendChild(meta);
+    var resourcesButton=el("button","campaign-resources-button","Resources"+(resourcesFor(c).length?" · "+resourcesFor(c).length:""));resourcesButton.setAttribute("aria-label","Resources for "+c.name);resourcesButton.onclick=function(){openCampaignResources(c)};card.appendChild(resourcesButton);
     var pr=el("div","prog"),bar=el("i");bar.style.width=(acts.length?Math.round(pub/acts.length*100):0)+"%";pr.appendChild(bar);
     card.appendChild(pr);
     var pl=el("div","prog-l");
@@ -1803,7 +1858,7 @@ function render(){
     who.title="Your account";who.setAttribute("aria-label","Your account: "+S.me.name);
   }else who.hidden=true;
   var teamManage=$("team-manage");if(teamManage){teamManage.hidden=!S.me;teamManage.onclick=openTeamMembers;}
-  renderMain();if(!requestedFocus)restoreViewport(position);
+  renderMain();refreshResourceView();if(!requestedFocus)restoreViewport(position);
 }
 function renderMain(){
   var position=viewportPosition(),requestedFocus=!!S.focusAdd,returnKey=returnFocusKey(document.activeElement);
@@ -1875,8 +1930,10 @@ function closeOverlay(force){
     notice.appendChild(keep);notice.appendChild(discard);dialog.querySelector(".p-foot").prepend(notice);keep.focus();return;
   }
   var closed=overlayState,previous=closed&&closed.previous;
+  if(resourceView&&closed&&closed.node===resourceView.node)resourceView=null;
   clear($("overlay"));overlayState=closed&&closed.parent;
   if(overlayState)(closed.parentNodes||[]).forEach(function(n){$("overlay").appendChild(n)});
+  refreshResourceView();
   document.body.style.overflow=overlayState?"hidden":"";
   document.querySelector(".topbar").inert=!!overlayState;$("workspace").inert=!!overlayState;
   var scope=overlayState?overlayState.node:$("workspace"),replacement=findReturnFocus(scope,closed&&closed.returnKey);
@@ -2595,6 +2652,7 @@ function openCampaign(c,afterCreate){
   var gl=input("text",d.goal,"What is this campaign for?");gl.id="camp-goal";
   gl.oninput=function(){d.goal=gl.value};
   more.body.appendChild(field("Goal (optional)",gl));
+  if(!isNew){var resourceButton=el("button","btn btn-o","Manage campaign resources");resourceButton.onclick=function(){openCampaignResources(c)};body.appendChild(resourceButton)}
 
   var two=el("div","f2");
   var sd=input("date",d.startDate);sd.id="camp-start";
@@ -2637,7 +2695,7 @@ function openCampaign(c,afterCreate){
         var chain=Promise.resolve();
         kids.forEach(function(a){chain=chain.then(function(){return db.doc("activities/"+a.id).delete()})});
         chain.then(function(){return db.doc("campaigns/"+c.id).delete()})
-          .then(function(){closeOverlay(true);toast("Campaign deleted")})
+          .then(function(){resourcesFor(c).forEach(cleanupCampaignFile);closeOverlay(true);toast("Campaign deleted")})
           .catch(function(e){err.hidden=false;err.textContent=msgFor(e);yes.disabled=false;yes.textContent="Delete"});
       };
       var no=el("button","btn btn-o","Cancel");no.onclick=function(){crow.remove();crow=null};
@@ -2857,7 +2915,7 @@ document.addEventListener("click",function(e){if(!e.target.closest(".account"))c
   auth.onAuthStateChanged(function(u){
     if(!u){
       subs.forEach(function(f){try{f()}catch(e){}});subs=[];
-      S.me=null;S.aiPlanning={};S.weeklyPlan=null;S.weeklyPlanReady=false;S.weeklyPlanError="";S.cadenceExpanded={};S.campaigns=[];S.activities=[];S.team=[];S.userRoster=[];S.members=[];S.ownerAliases={};S.workCollapsed={};S.membersReady=false;S.contentOptionsReady=false;setContentOptions(defaultContentOptions());S.templates=[];S.templateError="";S.templatesLoading=true;S.sopRules=[];S.sopReady=false;S.loading=true;
+      S.resourceJobs.forEach(function(job){if(job.controller)job.controller.abort()});S.resourceJobs=[];S.resourceDownloads={};resourceView=null;S.me=null;S.aiPlanning={};S.weeklyPlan=null;S.weeklyPlanReady=false;S.weeklyPlanError="";S.cadenceExpanded={};S.campaigns=[];S.activities=[];S.team=[];S.userRoster=[];S.members=[];S.ownerAliases={};S.workCollapsed={};S.membersReady=false;S.contentOptionsReady=false;setContentOptions(defaultContentOptions());S.templates=[];S.templateError="";S.templatesLoading=true;S.sopRules=[];S.sopReady=false;S.loading=true;
       render();showGate("signin");return;
     }
     if(!emailAllowed(u.email)){S.me=null;render();showGate("denied",u.email);return;}

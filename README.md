@@ -9,10 +9,25 @@ whole team sees live.
   keywords and a script. Subtasks carry their own platform, type, owner and date.
 - Five views: **Today**, **Weekly**, **Month**, **Planner**, **Campaigns**.
 
-No build step. Static files, Firestore for data, Firebase Auth for sign-in.
+Static UI, Firestore for shared data and Firebase Auth for sign-in. A small build
+bundles the private file-upload client; server functions handle AI and file access.
 
 ## Workspace experience
 
+- **Campaigns → Resources**, below each campaign's owner/date details, opens its
+  shared links and files even when activities are collapsed. **Edit → Manage
+  campaign resources** provides the same access while preserving unsaved campaign
+  details. **Add link** accepts Google Docs, Sheets, Slides, Drive and other web
+  URLs with an optional name; Drive permissions remain unchanged. **Upload files**
+  accepts up to ten files at once, 25 MB each, with progress, retry and cancel.
+  Files live in private Vercel Blob storage and download through the authenticated
+  NPrep endpoint. Campaign metadata stores references, never file bytes or storage
+  credentials. A resource appears after its upload and metadata save both succeed.
+  Failed metadata saves retry without uploading another copy. Campaigns support
+  up to 100 resources; duplicate links are blocked. Removing a resource asks for
+  confirmation. Duplicated campaigns share resource references; unlinking a file
+  preserves copies still referenced by other campaigns. Physical cleanup runs only
+  for its uploader or Ashutosh and only when no campaign references the file.
 - **Planner** is a reusable weekly content blueprint, independent of campaigns,
   activity dates, owners and completion. Switch between **Instagram → Shorts/Reels,
   Carousel, Stories** and **YouTube → Shorts, Long Form, Live, Exam**. Each platform
@@ -278,7 +293,9 @@ hosted — it is not on this Vercel account, so the record has to be added there
 
 Collections:
 
-- `campaigns/{id}` — name, goal, startDate, endDate, owner, status, colour
+- `campaigns/{id}` — name, goal, startDate, endDate, owner, status, colour,
+  resources[] (named web links or private file metadata) and resourcePaths[]
+  (file-reference index used to protect attachments shared by duplicated campaigns)
 - `activities/{id}` — campaignId, title, type, angle, cta, platforms[],
   dueDate, dueTime, owner, status, description, keywords[], script,
   subtasks[] (nested, each with platform, kind, owner, due, dueTime, children[])
@@ -327,6 +344,11 @@ npx serve .
 ```
 
 Then add `http://localhost:3000` to Firebase's authorized domains.
+Run `npm ci` and `npm run build` to create `upload-client.js`. For resource uploads
+and downloads use `vercel dev` with a private Blob store connected to the project;
+`BLOB_READ_WRITE_TOKEN` stays server-side. Production is connected to the private
+`campaign-resources` store. A plain static server supports links but cannot serve
+the file endpoint. No Firebase Storage billing upgrade is needed.
 
 ## Checking changes
 
@@ -342,6 +364,11 @@ editing, failure recovery, conflicts and mobile layouts without changing real wo
 `node tests/weekly.test.cjs` checks calendar-week boundaries, historical completion
 states and navigation without data changes. `node tests/reuse-ui.cjs --weekly-only`
 checks past/future navigation, day focus, date jumps and historical task editing.
+`node tests/resources.test.cjs` checks safe links and atomic resource persistence.
+`node tests/campaign-files.test.cjs` checks identity, private upload token limits,
+streamed downloads, cleanup and credential isolation. `node tests/reuse-ui.cjs
+--resources-only` exercises resource links/files, retries, cancellation, duplicate
+campaigns, nested campaign drafts, read-only access and desktop/mobile layouts.
 
 ## Gemini video task planning setup
 
