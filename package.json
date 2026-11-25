@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "build": "esbuild lib/upload-client.js --bundle --format=iife --global-name=CampaignFileUpload --outfile=upload-client.js --minify"
+    "build": "node scripts/build.cjs"
   },
   "dependencies": {
     "@vercel/blob": "2.3.3"

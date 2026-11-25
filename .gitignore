@@ -2,6 +2,7 @@
 Thumbs.db
 node_modules/
 /upload-client.js
+/public/
 .vercel
 .env
 .env.local

@@ -344,7 +344,8 @@ npx serve .
 ```
 
 Then add `http://localhost:3000` to Firebase's authorized domains.
-Run `npm ci` and `npm run build` to create `upload-client.js`. For resource uploads
+Run `npm ci` and `npm run build` to create the public UI and upload client in
+`public/`. Only the UI files are packaged there. For resource uploads
 and downloads use `vercel dev` with a private Blob store connected to the project;
 `BLOB_READ_WRITE_TOKEN` stays server-side. Production is connected to the private
 `campaign-resources` store. A plain static server supports links but cannot serve
