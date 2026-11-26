@@ -15,23 +15,29 @@ bundles the private file-upload client; server functions handle AI and file acce
 ## Workspace experience
 
 - **Testimonial portal** at `/testimonials/` uses the same verified NPrep sign-in
-  and shared Firestore workspace. Add a topper's student name, exam, rank, city,
-  state and college; track **Not scheduled → Scheduled → Recorded**, with an
-  interview date/time in IST and an optional safe recording link. Recorded
-  interviews without a link are flagged. Search student details or filter by
-  interview stage and campaign; mobile uses stacked student cards.
-  Choose a campaign, coordinator and content deadline. Saving atomically creates
-  one linked campaign activity, stores the student profile, and adds a named
-  **Testimonial portal** resource to the campaign. That link opens the portal
-  filtered to its campaign; the account menu also offers a portal shortcut.
-  Profile edits update the same activity without resetting its subtasks, custom
-  title/notes/script, publishing progress or independently edited dates/owners.
-  The activity editor shows all student details and recording/profile links;
-  the portal opens the linked activity directly. Interview progress does not
-  complete publishing work. Concurrent profile edits require loading the latest
-  revision, failed saves retain the draft, and reconnecting a deleted activity
-  requires an explicit replacement choice. Existing unstructured campaign tasks
-  are not converted into student records automatically.
+  and shared workspace. Each field has its own spreadsheet-style column: student
+  name, exam, rank, city, state, college, interview status, interview date/time,
+  faculty, meeting link, recording link and invitation delivery. Click a cell to
+  edit it; the student name stays visible while scrolling sideways on mobile.
+  **Scheduled** opens the interview form and requires a date, time (IST), faculty
+  name, email, Teams account and meeting link. **Recorded** requires a recording
+  link. The existing campaign resource still opens its filtered student roster;
+  campaign/coordinator/deadline fields are hidden and managed in the background.
+  Student edits preserve existing campaign titles, production subtasks and progress.
+  Gmail and Teams invitations have independent persisted delivery states. The
+  authenticated `/api/testimonial-invite` endpoint reads the saved schedule, sends
+  only student/exam/scheduling details (never private notes), and claims each
+  channel before sending. Repeated saves do not resend the same schedule; changed
+  schedules get a new revision. Timeouts are marked unconfirmed and are not
+  automatically retried. An HTTP 202 is shown as queued, never as confirmed sent.
+  Teams uses the server-only `FACULTY_TEAMS_WEBHOOK_URL` Power Automate endpoint.
+  Direct Gmail requires `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET` and
+  `GMAIL_REFRESH_TOKEN` with authorized Gmail send access. These credentials stay
+  in Vercel; the browser receives only delivery statuses. A separate
+  `FACULTY_EMAIL_WEBHOOK_URL` may alternatively handle email. Missing connections
+  show **Connection required** rather than a sent confirmation. A Power Automate
+  flow returns `{delivered:true,idempotencyKey:...}` only after its message action
+  succeeds; other successful responses remain queued.
 - Each campaign card shows attached file/link names below its owner/date details,
   even when activities are collapsed. Click a link to open it or a file name to
   download it. A link/paperclip icon identifies each attachment; the first two names

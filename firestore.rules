@@ -37,7 +37,7 @@ service cloud.firestore {
       function validStudent() {
         let s = request.resource.data;
         let a = getAfter(/databases/$(database)/documents/activities/$(s.activityId)).data;
-        return s.keys().hasOnly(['studentName','examName','rank','city','state','college','interviewStatus','interviewDate','interviewTime','recordingUrl','notes','campaignId','coordinator','contentDueDate','activityId','revision','createdBy','createdAt','updatedBy','updatedAt'])
+        return s.keys().hasOnly(['studentName','examName','rank','city','state','college','interviewStatus','interviewDate','interviewTime','facultyName','facultyEmail','facultyTeams','scheduleUrl','scheduleRevision','recordingUrl','notes','campaignId','coordinator','contentDueDate','activityId','revision','createdBy','createdAt','updatedBy','updatedAt'])
           && s.studentName is string && s.studentName.size() > 0 && s.studentName.size() <= 140
           && s.examName is string && s.examName.size() > 0 && s.examName.size() <= 200
           && s.rank is string && s.rank.size() <= 60
@@ -47,8 +47,14 @@ service cloud.firestore {
           && s.interviewStatus in ['not_scheduled','scheduled','recorded']
           && s.interviewDate is string && (s.interviewDate == '' || s.interviewDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'))
           && s.interviewTime is string && (s.interviewTime == '' || s.interviewTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$'))
-          && (s.interviewStatus != 'scheduled' || (s.interviewDate != '' && s.interviewTime != ''))
+          && s.facultyName is string && s.facultyName.size() <= 140
+          && s.facultyEmail is string && s.facultyEmail.size() <= 200 && (s.facultyEmail == '' || s.facultyEmail.matches('^[^ @]+@[^ @]+[.][^ @]+$'))
+          && s.facultyTeams is string && s.facultyTeams.size() <= 200 && (s.facultyTeams == '' || s.facultyTeams.matches('^[^ @]+@[^ @]+[.][^ @]+$'))
+          && s.scheduleUrl is string && s.scheduleUrl.size() <= 2000 && (s.scheduleUrl == '' || s.scheduleUrl.matches('^https?://[^ /]+.*'))
+          && s.scheduleRevision is int && s.scheduleRevision >= 0
+          && (s.interviewStatus != 'scheduled' || (s.interviewDate != '' && s.interviewTime != '' && s.facultyName != '' && s.facultyEmail != '' && s.facultyTeams != '' && s.scheduleUrl != ''))
           && s.recordingUrl is string && s.recordingUrl.size() <= 2000 && (s.recordingUrl == '' || s.recordingUrl.matches('^https?://[^ /]+.*'))
+          && (s.interviewStatus != 'recorded' || s.recordingUrl != '')
           && s.notes is string && s.notes.size() <= 2000
           && s.campaignId is string && s.campaignId.size() > 0 && s.campaignId.size() <= 160
           && s.coordinator is string && s.coordinator.size() <= 200
@@ -86,6 +92,17 @@ service cloud.firestore {
     }
     match /sopNameClaims/{nameKey} {
       allow read, write: if nprep();
+    }
+
+    // Delivery receipts are shared with the same internal team as the profiles.
+    match /testimonialInvitations/{invitationId} {
+      allow read: if nprep();
+      allow create, update: if nprep()
+        && request.resource.data.keys().hasOnly(['studentId','scheduleRevision','scheduleKey','email','teams'])
+        && request.resource.data.studentId is string
+        && request.resource.data.scheduleRevision is int && request.resource.data.scheduleRevision > 0
+        && request.resource.data.scheduleKey is string && request.resource.data.scheduleKey.size() == 64
+        && request.resource.data.email is map && request.resource.data.teams is map;
     }
 
     // Assignable people exist independently of authenticated accounts.
