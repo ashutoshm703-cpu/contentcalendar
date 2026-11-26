@@ -416,7 +416,7 @@ function saveCompletion(a,nodeId,done){
     if(nodeId){var target=nodeById(current.subtasks,nodeId);if(!target)throw new Error("This subtask no longer exists.");function finish(n){return Object.assign({},n,{done:done,completedAt:done?new Date().toISOString():"",children:kids(n).map(finish)})}patch={subtasks:patchNode(current.subtasks,nodeId,finish(target))}}
     else patch={status:done?"Published":"Ready",completedAt:done?new Date().toISOString():""};
     tx.update(ref,patch);return Object.assign({},current,patch);
-  })})}).then(function(saved){Object.assign(a,saved);S.activities=S.activities.map(function(item){return item.id===a.id?saved:item});toast(done?"Marked complete":"Marked incomplete");return saved}).catch(function(e){toast(e.code?msgFor(e):e.message);throw e}).finally(function(){delete S.completing[key];render()});
+  })})}).then(function(saved){Object.assign(a,saved);S.activities=S.activities.map(function(item){return item.id===a.id?saved:item});notifyTestimonialHandoff(saved);toast(done?"Marked complete":"Marked incomplete");return saved}).catch(function(e){toast(e.code?msgFor(e):e.message);throw e}).finally(function(){delete S.completing[key];render()});
 }
 function completionControl(a,n,onSaved){
   if(n)n=nodeById(a.subtasks,n.id)||n;
@@ -1210,9 +1210,9 @@ function saveActivityWithSops(id,patch,selected){
       if(!snap.exists){var e=new Error();e.code="not-found";throw e}
       var current=snap.data(),next=applySopRules(Object.assign({},current,patch),selected),update=Object.assign({},patch);
       if(JSON.stringify(next.appliedSopRules)!==JSON.stringify(current.appliedSopRules||[])){update.subtasks=next.subtasks;update.appliedSopRules=next.appliedSopRules}
-      tx.update(ref,update);
+      tx.update(ref,update);return Object.assign({id:id},current,update);
     });
-  })});
+  })}).then(function(saved){notifyTestimonialHandoff(saved);return saved});
 }
 function saveSubtaskWithSops(a,id,changes,selected,manual){
   if(changes.dueTime!==undefined&&!validDueTime(changes.dueTime))return Promise.reject(Object.assign(new Error("Choose a valid due time."),{userMessage:"Choose a valid due time."}));
@@ -1233,7 +1233,7 @@ function saveSubtaskWithSops(a,id,changes,selected,manual){
       var patch=id?{subtasks:patchNode(current.subtasks,id,target)}:{subtasks:target.children,appliedSopRules:target.appliedSopRules};
       tx.update(ref,patch);return Object.assign({},current,patch);
     });
-  })}).then(function(current){a.subtasks=current.subtasks;a.appliedSopRules=current.appliedSopRules||[];render();return current});
+  })}).then(function(current){a.subtasks=current.subtasks;a.appliedSopRules=current.appliedSopRules||[];notifyTestimonialHandoff(current);render();return current});
 }
 function sopChecklistList(nodes){var list=el("ul","sop-steps");(nodes||[]).forEach(function(n){var item=el("li",null,n.title);if(kids(n).length)item.appendChild(sopChecklistList(kids(n)));list.appendChild(item)});return list}
 function sopAdditionCount(target,rule){return Math.max(0,leaves(mergeSopNodes(kids(target),sopNodes(rule))).length-leaves(kids(target)).length)}
@@ -2211,6 +2211,7 @@ function openSubtask(a,s,onSaved,focusDeadline){
   clear($("toasts"));validate();keyboardSave(dialog,save);overlay(dialog,function(){return JSON.stringify(draft)!==JSON.stringify(original)||selected.length>0},true);
 }
 
+function notifyTestimonialHandoff(a){if(!a.testimonialId||!auth||!auth.currentUser)return;auth.currentUser.getIdToken().then(function(token){return fetch('/api/testimonial-thread',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({studentId:a.testimonialId})})}).then(function(r){return r.json()}).then(function(result){if(result.error)toast('Task saved. '+result.error)}).catch(function(){toast('Task saved. The Teams handoff could not be confirmed.')})}
 function testimonialDetails(a){
   var s=a.testimonial,box=el('section','linked-student'),heading=el('div','linked-student-heading');heading.appendChild(el('h3',null,'Student testimonial'));var edit=el('a',null,'Open student profile');edit.href='/testimonials/?student='+encodeURIComponent(s.id)+'&campaign='+encodeURIComponent(a.campaignId);heading.appendChild(edit);box.appendChild(heading);
   var facts=el('dl','linked-student-facts');[['Student',s.studentName],['Exam',s.examName],['Rank',s.rank],['City',s.city],['State',s.state],['College',s.college],['Faculty',s.facultyName],['Faculty email',s.facultyEmail],['Faculty Teams',s.facultyTeams],['Interview',({not_scheduled:'Not scheduled',scheduled:'Scheduled',recorded:'Recorded'})[s.interviewStatus]],['Interview schedule',[s.interviewDate?fmtLong(s.interviewDate):'',s.interviewTime?fmtTime(s.interviewTime)+' IST':''].filter(Boolean).join(' · ')]].forEach(function(item){if(item[1]){var pair=el('div');pair.appendChild(el('dt',null,item[0]));pair.appendChild(el('dd',null,item[1]));facts.appendChild(pair)}});box.appendChild(facts);
@@ -2543,7 +2544,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
 }
 
 function setField(id,patch,ok){
-  db.doc("activities/"+id).update(patch).then(ok).catch(function(e){toast(msgFor(e))});
+  db.doc("activities/"+id).update(patch).then(function(){var a=S.activities.find(function(item){return item.id===id});if(a)notifyTestimonialHandoff(a);if(ok)ok()}).catch(function(e){toast(msgFor(e))});
 }
 function msgFor(e){
   var c=e&&e.code;

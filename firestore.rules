@@ -104,6 +104,17 @@ service cloud.firestore {
         && request.resource.data.scheduleKey is string && request.resource.data.scheduleKey.size() == 64
         && request.resource.data.email is map && request.resource.data.teams is map;
     }
+    match /testimonialThreads/{studentId} {
+      allow read: if nprep();
+      allow create, update: if nprep()
+        && request.resource.data.keys().hasOnly(['studentId','threadId','threadUrl','lastEvent','state','updatedAt'])
+        && request.resource.data.studentId == studentId
+        && request.resource.data.threadId is string && request.resource.data.threadId.size() <= 200
+        && request.resource.data.threadUrl is string && request.resource.data.threadUrl.size() <= 2000
+        && request.resource.data.lastEvent is string && request.resource.data.lastEvent.size() == 64
+        && request.resource.data.state in ['sending','sent','queued','failed','unknown']
+        && request.resource.data.updatedAt is string;
+    }
 
     // Assignable people exist independently of authenticated accounts.
     match /teamMembers/{memberId} {

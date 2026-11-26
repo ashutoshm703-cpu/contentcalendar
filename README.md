@@ -38,6 +38,20 @@ bundles the private file-upload client; server functions handle AI and file acce
   show **Connection required** rather than a sent confirmation. A Power Automate
   flow returns `{delivered:true,idempotencyKey:...}` only after its message action
   succeeds; other successful responses remain queued.
+- **Testimonial Teams handoffs** use `/api/testimonial-thread`, restricted to verified
+  NPrep accounts. New profiles, interview-stage changes, task edits and completion
+  changes notify the configured channel. The next step is scheduling, the selected
+  faculty's interview, then the first unfinished production subtask in checklist
+  order, inheriting its nearest parent's owner. A missing owner falls back to the
+  activity coordinator or profile creator. Private notes are excluded.
+  `TESTIMONIAL_TEAMS_WEBHOOK_URL` stays in Vercel. In the confirmed-response mode,
+  the flow must return `{delivered:true,idempotencyKey,threadId,threadUrl}` after
+  posting; the server preserves that root ID for replies. For standard-connector
+  flows, `TESTIMONIAL_TEAMS_THREAD_MODE=flow` delegates root-ID mapping and event
+  deduplication to a durable SharePoint list, with flow concurrency set to one.
+  HTTP 202 means queued, not delivered. Enable that mode only after the flow's
+  create/reply branches and mapping persistence have been tested. Ambiguous
+  timeouts block automatic retries to avoid duplicate topper threads.
 - Each campaign card shows attached file/link names below its owner/date details,
   even when activities are collapsed. Click a link to open it or a file name to
   download it. A link/paperclip icon identifies each attachment; the first two names

@@ -3,6 +3,7 @@
   "functions": {
     "api/activity-plan.js": { "maxDuration": 60 },
     "api/campaign-files.js": { "maxDuration": 60 },
-    "api/testimonial-invite.js": { "maxDuration": 60 }
+    "api/testimonial-invite.js": { "maxDuration": 60 },
+    "api/testimonial-thread.js": { "maxDuration": 60 }
   }
 }
