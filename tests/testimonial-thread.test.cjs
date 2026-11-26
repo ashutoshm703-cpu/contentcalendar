@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict'),handler=require('../api/testimonial-thread.js'),I=require('../api/testimonial-invite.js')._test,H=require('../lib/testimonial-handoff.cjs');
-const originalFetch=global.fetch,keys=['TESTIMONIAL_TEAMS_WEBHOOK_URL','TESTIMONIAL_TEAMS_THREAD_MODE'],env=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
+const originalFetch=global.fetch,keys=['TESTIMONIAL_TEAMS_WEBHOOK_URL','TESTIMONIAL_TEAMS_THREAD_MODE','TESTIMONIAL_TEAMS_TEST_STUDENT_ID'],env=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
 const base='https://firestore.googleapis.com/v1/projects/nprep-content-calendar/databases/(default)/documents/',url='https://example.logic.azure.com/workflows/thread-fixture';
 let rows,calls,mode,counter,account,hold,release;
 const student={studentName:'Synthetic <student>',examName:'Exam',rank:'24',planName:'Gold & Premium',interviewStatus:'not_scheduled',createdBy:'editor',activityId:'testimonial-student',notes:'PRIVATE NOTES'};
@@ -19,6 +19,7 @@ async function request(body={studentId:'student'},authorization='Bearer fixture.
  reset();mode='accepted';assert.equal((await request()).status,503);assert.equal(rows['testimonialThreads/student'].data.state,'unknown');
  reset();delete process.env.TESTIMONIAL_TEAMS_WEBHOOK_URL;assert.equal((await request()).result.state,'needs_setup');assert.equal(calls.length,0);assert.equal(rows['testimonialThreads/student'],undefined);
  reset();assert.equal((await request({},'')).status,401);account.emailVerified=false;assert.equal((await request()).status,403);account.emailVerified=true;account.email='outside@example.com';assert.equal((await request()).status,403);reset();assert.equal((await request({studentId:'../bad'})).status,400);rows['activities/testimonial-student'].data.testimonialId='another';assert.equal((await request()).status,409);assert.equal(calls.length,0);
+ reset();process.env.TESTIMONIAL_TEAMS_TEST_STUDENT_ID='different-test';assert.equal((await request()).result.state,'needs_setup');assert.equal(calls.length,0);process.env.TESTIMONIAL_TEAMS_TEST_STUDENT_ID='student';assert.equal((await request()).result.state,'sent');assert.equal(calls.length,1);
  reset();process.env.TESTIMONIAL_TEAMS_WEBHOOK_URL='https://evil.example.com';assert.equal((await request()).status,503);assert.equal(calls.length,0);
  const done=structuredClone(activity);done.subtasks[0].done=true;assert.equal(H.handoff({...student,interviewStatus:'recorded'},done).title,'Prepare and publish the testimonial');done.status='Published';assert.equal(H.handoff({...student,interviewStatus:'recorded'},done).complete,true);
  assert.deepEqual(I.decode(I.encode({nodes:activity.subtasks,complete:true,empty:null})),{nodes:activity.subtasks,complete:true,empty:null});

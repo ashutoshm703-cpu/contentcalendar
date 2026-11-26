@@ -24,6 +24,11 @@ bundles the private file-upload client; server functions handle AI and file acce
   link. The existing campaign resource still opens its filtered student roster;
   campaign/coordinator/deadline fields are hidden and managed in the background.
   Student edits preserve existing campaign titles, production subtasks and progress.
+  A bottom **Add a topper** row saves name, exam, rank and plan with Enter;
+  **More details** carries that draft into the full profile. Failed saves retain
+  the entry. The roster sorts by saved last-edit time, falling back to creation
+  time for older records, and shows ten toppers per page with Previous/Next.
+  Search and stage filters reset to page one; counts reflect all matching records.
   Gmail and Teams invitations have independent persisted delivery states. The
   authenticated `/api/testimonial-invite` endpoint reads the saved schedule, sends
   only student/exam/scheduling details (never private notes), and claims each
