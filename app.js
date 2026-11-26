@@ -2211,6 +2211,14 @@ function openSubtask(a,s,onSaved,focusDeadline){
   clear($("toasts"));validate();keyboardSave(dialog,save);overlay(dialog,function(){return JSON.stringify(draft)!==JSON.stringify(original)||selected.length>0},true);
 }
 
+function testimonialDetails(a){
+  var s=a.testimonial,box=el('section','linked-student'),heading=el('div','linked-student-heading');heading.appendChild(el('h3',null,'Student testimonial'));var edit=el('a',null,'Open student profile');edit.href='/testimonials/?student='+encodeURIComponent(s.id)+'&campaign='+encodeURIComponent(a.campaignId);heading.appendChild(edit);box.appendChild(heading);
+  var facts=el('dl','linked-student-facts');[['Student',s.studentName],['Exam',s.examName],['Rank',s.rank],['City',s.city],['State',s.state],['College',s.college],['Interview',({not_scheduled:'Not scheduled',scheduled:'Scheduled',recorded:'Recorded'})[s.interviewStatus]],['Interview schedule',[s.interviewDate?fmtLong(s.interviewDate):'',s.interviewTime?fmtTime(s.interviewTime)+' IST':''].filter(Boolean).join(' · ')]].forEach(function(item){if(item[1]){var pair=el('div');pair.appendChild(el('dt',null,item[0]));pair.appendChild(el('dd',null,item[1]));facts.appendChild(pair)}});box.appendChild(facts);
+  if(s.notes)box.appendChild(el('p','linked-student-notes',s.notes));
+  if(s.recordingUrl){try{var url=new URL(s.recordingUrl);if(['https:','http:'].indexOf(url.protocol)>=0&&!url.username&&!url.password){var recording=el('a','linked-student-recording','Open interview recording');recording.href=url.href;recording.target='_blank';recording.rel='noopener noreferrer';recording.prepend(campaignResourceIcon('link'));box.appendChild(recording)}}catch(e){}}
+  else if(s.interviewStatus==='recorded')box.appendChild(el('p','hint','Interview recorded · Recording link needed'));
+  return box;
+}
 /* ─── activity panel ────────────────────────────────────── */
 function openActivity(a,presetDate,presetCampaign,preset){
   if(!a&&!writable())return;
@@ -2239,6 +2247,7 @@ function openActivity(a,presetDate,presetCampaign,preset){
   p.appendChild(head);
   var body=el("div","p-body");p.appendChild(body);
   body.appendChild(el("p","form-intro",isNew?"Start with the essentials. You can fill in the content details later.":"Update the plan, schedule or content for this activity."));
+  if(a&&a.testimonial)body.appendChild(testimonialDetails(a));
   if(!isNew&&writable()){
     var reuse=el("div","reuse-tools"),duplicate=el("button","btn btn-o","Duplicate activity"),repeatButton=el("button","btn btn-o","Repeat activity");
     duplicate.onclick=function(){openDuplicate(a,false,false)};repeatButton.onclick=function(){openDuplicate(a,false,true)};
@@ -2808,7 +2817,10 @@ var ALLOWED_DOMAIN="nprep.in";
 var pending=0,timer=null,auth=null,subs=[];
 function settled(){
   pending--;
-  if(pending<=0){S.loading=false;S.stale=false;if(timer){clearTimeout(timer);timer=null}render()}
+  if(pending<=0){S.loading=false;S.stale=false;if(timer){clearTimeout(timer);timer=null}render();openTestimonialTaskLink()}
+}
+function openTestimonialTaskLink(){
+  if(typeof location==='undefined')return;var url=new URL(location.href),id=url.searchParams.get('testimonialTask');if(!id)return;url.searchParams.delete('testimonialTask');history.replaceState(null,'',url);var a=S.activities.find(function(item){return item.id===id});if(!a){toast('This campaign task is no longer available.');return}S.view='campaigns';S.workScope='team';S.query='';S.filters={};S.workCollapsed['campaign:'+a.campaignId]=false;S.workCollapsed['task:'+a.id]=false;render();openActivity(a);
 }
 function sortCampaigns(){S.campaigns.sort(function(a,b){return a.createdAt<b.createdAt?-1:1})}
 function emailAllowed(e){
@@ -2936,6 +2948,7 @@ $("who").onclick=function(){
   menu.appendChild(el("span","account-email",S.me?S.me.email:""));
   menu.appendChild(el("span","account-access","NPrep team workspace"));
   var options=el("button","account-signout","Content options");options.onclick=function(){closeAccount();openContentOptions()};menu.appendChild(options);
+  var portal=el('a','account-signout','Testimonial portal');portal.href='/testimonials/';portal.style.cssText='display:block;text-decoration:none;text-align:left';menu.appendChild(portal);
   var signOut=el("button","account-signout","Sign out");
   signOut.onclick=function(){closeAccount();if(auth)auth.signOut()};menu.appendChild(signOut);
   menu.hidden=false;$("who").setAttribute("aria-expanded","true");

@@ -31,6 +31,43 @@ service cloud.firestore {
       allow read, create, update: if nprep();
       allow delete: if taskDeletionOwner();
     }
+    // The internal student portal shares the existing verified NPrep team access.
+    // A profile and its canonical campaign task must be written together.
+    match /testimonials/{studentId} {
+      function validStudent() {
+        let s = request.resource.data;
+        let a = getAfter(/databases/$(database)/documents/activities/$(s.activityId)).data;
+        return s.keys().hasOnly(['studentName','examName','rank','city','state','college','interviewStatus','interviewDate','interviewTime','recordingUrl','notes','campaignId','coordinator','contentDueDate','activityId','revision','createdBy','createdAt','updatedBy','updatedAt'])
+          && s.studentName is string && s.studentName.size() > 0 && s.studentName.size() <= 140
+          && s.examName is string && s.examName.size() > 0 && s.examName.size() <= 200
+          && s.rank is string && s.rank.size() <= 60
+          && s.city is string && s.city.size() <= 120
+          && s.state is string && s.state.size() <= 120
+          && s.college is string && s.college.size() <= 240
+          && s.interviewStatus in ['not_scheduled','scheduled','recorded']
+          && s.interviewDate is string && (s.interviewDate == '' || s.interviewDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'))
+          && s.interviewTime is string && (s.interviewTime == '' || s.interviewTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$'))
+          && (s.interviewStatus != 'scheduled' || (s.interviewDate != '' && s.interviewTime != ''))
+          && s.recordingUrl is string && s.recordingUrl.size() <= 2000 && (s.recordingUrl == '' || s.recordingUrl.matches('^https?://[^ /]+.*'))
+          && s.notes is string && s.notes.size() <= 2000
+          && s.campaignId is string && s.campaignId.size() > 0 && s.campaignId.size() <= 160
+          && s.coordinator is string && s.coordinator.size() <= 200
+          && s.contentDueDate is string && s.contentDueDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+          && s.activityId == 'testimonial-' + studentId && a.testimonialId == studentId
+          && a.campaignId == s.campaignId && a.dueDate == s.contentDueDate && a.owner == s.coordinator
+          && a.testimonial.studentName == s.studentName && a.testimonial.examName == s.examName
+          && a.testimonial.interviewStatus == s.interviewStatus && a.testimonial.recordingUrl == s.recordingUrl
+          && s.revision is int && s.revision > 0
+          && s.createdBy is string && s.createdAt is string && s.updatedAt is string && s.updatedBy == request.auth.uid;
+      }
+      allow read: if nprep();
+      allow create: if nprep() && validStudent() && request.resource.data.revision == 1 && request.resource.data.createdBy == request.auth.uid;
+      allow update: if nprep() && validStudent()
+        && request.resource.data.revision == resource.data.revision + 1
+        && request.resource.data.activityId == resource.data.activityId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
     match /subtaskTemplates/{templateId} {
       allow read, update, delete: if nprep();
     }

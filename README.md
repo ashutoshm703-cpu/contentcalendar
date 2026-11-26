@@ -14,6 +14,24 @@ bundles the private file-upload client; server functions handle AI and file acce
 
 ## Workspace experience
 
+- **Testimonial portal** at `/testimonials/` uses the same verified NPrep sign-in
+  and shared Firestore workspace. Add a topper's student name, exam, rank, city,
+  state and college; track **Not scheduled → Scheduled → Recorded**, with an
+  interview date/time in IST and an optional safe recording link. Recorded
+  interviews without a link are flagged. Search student details or filter by
+  interview stage and campaign; mobile uses stacked student cards.
+  Choose a campaign, coordinator and content deadline. Saving atomically creates
+  one linked campaign activity, stores the student profile, and adds a named
+  **Testimonial portal** resource to the campaign. That link opens the portal
+  filtered to its campaign; the account menu also offers a portal shortcut.
+  Profile edits update the same activity without resetting its subtasks, custom
+  title/notes/script, publishing progress or independently edited dates/owners.
+  The activity editor shows all student details and recording/profile links;
+  the portal opens the linked activity directly. Interview progress does not
+  complete publishing work. Concurrent profile edits require loading the latest
+  revision, failed saves retain the draft, and reconnecting a deleted activity
+  requires an explicit replacement choice. Existing unstructured campaign tasks
+  are not converted into student records automatically.
 - Each campaign card shows attached file/link names below its owner/date details,
   even when activities are collapsed. Click a link to open it or a file name to
   download it. A link/paperclip icon identifies each attachment; the first two names

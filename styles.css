@@ -63,6 +63,8 @@ p{margin:0}
 .vsw button{padding:13px 16px;border-radius:6px 6px 0 0;font-size:13px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:color .2s var(--e),background .2s var(--e)}
 .vsw button:hover{color:var(--text);background:var(--surface-2)}
 .vsw button[aria-selected=true]{background:transparent;color:var(--text);font-weight:600;box-shadow:inset 0 -2px var(--sky)}
+.linked-student{border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:18px;display:flex;flex-direction:column;gap:14px}
+.linked-student-heading{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}.linked-student-heading h3{font-size:16px}.linked-student a{color:var(--brand);font-size:13px}.linked-student-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 18px;margin:0}.linked-student-facts dt{font-size:12px;color:var(--text-2)}.linked-student-facts dd{font-size:14px;margin:4px 0 0;overflow-wrap:anywhere}.linked-student-notes{font-size:13px;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere}.linked-student-recording{display:flex;align-items:center;gap:8px}.linked-student-recording svg{flex:none}
 
 .btn{padding:11px 18px;min-height:42px;border-radius:9px;font-size:13px;font-weight:600;transition:box-shadow .2s var(--e),background .2s var(--e);flex:none}
 .btn:active{transform:scale(.97)}
