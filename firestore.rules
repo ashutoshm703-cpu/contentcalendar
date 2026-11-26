@@ -37,10 +37,11 @@ service cloud.firestore {
       function validStudent() {
         let s = request.resource.data;
         let a = getAfter(/databases/$(database)/documents/activities/$(s.activityId)).data;
-        return s.keys().hasOnly(['studentName','examName','rank','city','state','college','interviewStatus','interviewDate','interviewTime','facultyName','facultyEmail','facultyTeams','scheduleUrl','scheduleRevision','recordingUrl','notes','campaignId','coordinator','contentDueDate','activityId','revision','createdBy','createdAt','updatedBy','updatedAt'])
+        return s.keys().hasOnly(['studentName','examName','rank','planName','city','state','college','interviewStatus','interviewDate','interviewTime','facultyName','facultyEmail','facultyTeams','scheduleUrl','scheduleRevision','recordingUrl','notes','campaignId','coordinator','contentDueDate','activityId','revision','createdBy','createdAt','updatedBy','updatedAt'])
           && s.studentName is string && s.studentName.size() > 0 && s.studentName.size() <= 140
           && s.examName is string && s.examName.size() > 0 && s.examName.size() <= 200
           && s.rank is string && s.rank.size() <= 60
+          && (!('planName' in s) || (s.planName is string && s.planName.size() <= 140))
           && s.city is string && s.city.size() <= 120
           && s.state is string && s.state.size() <= 120
           && s.college is string && s.college.size() <= 240
