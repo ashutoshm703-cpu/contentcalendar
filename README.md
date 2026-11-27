@@ -29,6 +29,17 @@ bundles the private file-upload client; server functions handle AI and file acce
   the entry. The roster sorts by saved last-edit time, falling back to creation
   time for older records, and shows ten toppers per page with Previous/Next.
   Search and stage filters reset to page one; counts reflect all matching records.
+  Ashutosh's verified owner account can use the row **⋯ → Delete testimonial**
+  or the same action in the profile editor. A confirmation names the student and
+  exam; deletion moves the record to **Trash**, with **Undo** and **Restore**.
+  Campaign tasks, checklist progress, resources and recordings remain intact.
+  Deletion and restoration change only the profile's audit fields and revision;
+  stale editors cannot resurrect entries or overwrite newer edits. There is no
+  permanent-delete action or automatic purge. Teams lifecycle notices target an
+  existing confirmed thread only; a missing thread or sender connection is reported
+  separately and does not prevent moving the entry to Trash. Trashed entries are
+  excluded from the active roster and cannot send interview invitations or task
+  handoff notifications. The owner restriction is enforced by Firestore rules.
   Gmail and Teams invitations have independent persisted delivery states. The
   authenticated `/api/testimonial-invite` endpoint reads the saved schedule, sends
   only student/exam/scheduling details (never private notes), and claims each

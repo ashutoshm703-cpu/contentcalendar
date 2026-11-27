@@ -37,7 +37,7 @@ service cloud.firestore {
       function validStudent() {
         let s = request.resource.data;
         let a = getAfter(/databases/$(database)/documents/activities/$(s.activityId)).data;
-        return s.keys().hasOnly(['studentName','examName','rank','planName','city','state','college','interviewStatus','interviewDate','interviewTime','facultyName','facultyEmail','facultyTeams','scheduleUrl','scheduleRevision','recordingUrl','notes','campaignId','coordinator','contentDueDate','activityId','revision','createdBy','createdAt','updatedBy','updatedAt'])
+        return s.keys().hasOnly(['studentName','examName','rank','planName','city','state','college','interviewStatus','interviewDate','interviewTime','facultyName','facultyEmail','facultyTeams','scheduleUrl','scheduleRevision','recordingUrl','notes','campaignId','coordinator','contentDueDate','activityId','revision','createdBy','createdAt','updatedBy','updatedAt','deletedAt','deletedBy','restoredAt','restoredBy'])
           && s.studentName is string && s.studentName.size() > 0 && s.studentName.size() <= 140
           && s.examName is string && s.examName.size() > 0 && s.examName.size() <= 200
           && s.rank is string && s.rank.size() <= 60
@@ -67,13 +67,27 @@ service cloud.firestore {
           && s.revision is int && s.revision > 0
           && s.createdBy is string && s.createdAt is string && s.updatedAt is string && s.updatedBy == request.auth.uid;
       }
+      function active(s) { return !('deletedAt' in s) || s.deletedAt == ''; }
+      function lifecycleChange() {
+        let s = request.resource.data;
+        return taskDeletionOwner()
+          && s.diff(resource.data).affectedKeys().hasOnly(['deletedAt','deletedBy','restoredAt','restoredBy','revision','updatedAt','updatedBy'])
+          && s.revision == resource.data.revision + 1
+          && s.updatedBy == request.auth.uid && s.updatedAt is string && s.updatedAt.size() > 0
+          && ((active(resource.data) && s.deletedAt is string && s.deletedAt == s.updatedAt && s.deletedBy == request.auth.uid
+                && !s.diff(resource.data).affectedKeys().hasAny(['restoredAt','restoredBy']))
+            || (!active(resource.data) && s.deletedAt == '' && s.deletedBy == ''
+                && s.restoredAt == s.updatedAt && s.restoredBy == request.auth.uid));
+      }
       allow read: if nprep();
-      allow create: if nprep() && validStudent() && request.resource.data.revision == 1 && request.resource.data.createdBy == request.auth.uid;
-      allow update: if nprep() && validStudent()
+      allow create: if nprep() && validStudent() && request.resource.data.revision == 1 && request.resource.data.createdBy == request.auth.uid
+        && !request.resource.data.keys().hasAny(['deletedAt','deletedBy','restoredAt','restoredBy']);
+      allow update: if lifecycleChange() || (nprep() && validStudent() && active(resource.data) && active(request.resource.data)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['deletedAt','deletedBy','restoredAt','restoredBy'])
         && request.resource.data.revision == resource.data.revision + 1
         && request.resource.data.activityId == resource.data.activityId
         && request.resource.data.createdBy == resource.data.createdBy
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && request.resource.data.createdAt == resource.data.createdAt);
     }
     match /subtaskTemplates/{templateId} {
       allow read, update, delete: if nprep();
